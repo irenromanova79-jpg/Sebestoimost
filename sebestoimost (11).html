@@ -1,0 +1,1736 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Калькулятор себестоимости</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Geologica:wght@300;400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+:root{
+  --bg:#0f1117;
+  --bg2:#161b27;
+  --bg3:#1e2535;
+  --bg4:#252d40;
+  --border:#2a3349;
+  --text:#e8eaf0;
+  --text2:#8b92a8;
+  --text3:#4a5168;
+  --accent:#4f8ef7;
+  --accent2:#2563eb;
+  --green:#22c55e;
+  --green-bg:rgba(34,197,94,.1);
+  --red:#ef4444;
+  --red-bg:rgba(239,68,68,.1);
+  --amber:#f59e0b;
+  --amber-bg:rgba(245,158,11,.1);
+  --font:'Geologica',sans-serif;
+  --mono:'JetBrains Mono',monospace;
+  --r:6px;
+  --r2:10px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:14px;min-height:100vh}
+/* Layout */
+.app{display:grid;grid-template-columns:220px 1fr;grid-template-rows:56px 1fr;height:100vh;overflow:hidden}
+.topbar{grid-column:1/-1;display:flex;align-items:center;padding:0 1.5rem;border-bottom:1px solid var(--border);background:var(--bg2);gap:1rem}
+.logo{font-family:var(--mono);font-size:13px;font-weight:500;color:var(--accent);letter-spacing:.05em}
+.logo span{color:var(--text2)}
+.topbar-right{margin-left:auto;display:flex;align-items:center;gap:.75rem}
+.sidebar{background:var(--bg2);border-right:1px solid var(--border);padding:1rem 0;display:flex;flex-direction:column;gap:2px;overflow-y:auto}
+.nav-item{display:flex;align-items:center;gap:.625rem;padding:.5rem 1rem;cursor:pointer;border-radius:0;font-size:13px;color:var(--text2);transition:all .15s;border-left:2px solid transparent;margin:0 .5rem;border-radius:var(--r)}
+.nav-item:hover{background:var(--bg3);color:var(--text)}
+.nav-item.active{background:rgba(79,142,247,.1);color:var(--accent);border-left-color:var(--accent)}
+.nav-icon{font-size:16px;width:18px;text-align:center}
+.nav-sep{height:1px;background:var(--border);margin:.5rem 1rem}
+.nav-label{font-size:10px;color:var(--text3);padding:.5rem 1rem .25rem;text-transform:uppercase;letter-spacing:.08em;font-weight:500}
+.content{overflow-y:auto;padding:1.5rem}
+.section{display:none}.section.active{display:block}
+/* Cards */
+.card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--r2);padding:1.25rem;margin-bottom:1rem}
+.card-title{font-size:13px;font-weight:500;color:var(--text2);text-transform:uppercase;letter-spacing:.06em;margin-bottom:1rem}
+/* Upload zones */
+.upload-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:.875rem;margin-bottom:1rem}
+.upload-zone{border:1px dashed var(--border);border-radius:var(--r2);padding:1.5rem 1rem;text-align:center;cursor:pointer;transition:all .2s;position:relative}
+.upload-zone:hover{border-color:var(--accent);background:rgba(79,142,247,.05)}
+.upload-zone.loaded{border-color:var(--green);border-style:solid}
+.upload-icon{font-size:24px;margin-bottom:.5rem;display:block}
+.upload-title{font-size:13px;font-weight:500;margin-bottom:.25rem}
+.upload-hint{font-size:11px;color:var(--text2)}
+.upload-status{margin-top:.625rem;padding:.4rem .75rem;border-radius:var(--r);font-size:11px;font-family:var(--mono);background:rgba(34,197,94,.1);color:var(--green);display:none}
+.upload-zone.loaded .upload-status{display:block}
+/* Metrics */
+.metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:.75rem;margin-bottom:1rem}
+.metric{background:var(--bg2);border:1px solid var(--border);border-radius:var(--r2);padding:1rem}
+.metric-label{font-size:11px;color:var(--text2);margin-bottom:.25rem;font-weight:500;text-transform:uppercase;letter-spacing:.04em}
+.metric-value{font-size:22px;font-weight:300;letter-spacing:-.02em}
+.metric-value.green{color:var(--green)}
+.metric-value.red{color:var(--red)}
+.metric-value.amber{color:var(--amber)}
+.metric-sub{font-size:11px;color:var(--text3);margin-top:.125rem;font-family:var(--mono)}
+/* Table */
+.table-wrap{background:var(--bg2);border:1px solid var(--border);border-radius:var(--r2);overflow:hidden}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{text-align:left;padding:.625rem 1rem;border-bottom:1px solid var(--border);color:var(--text2);font-size:11px;font-weight:500;text-transform:uppercase;letter-spacing:.05em;background:var(--bg3);white-space:nowrap}
+th.r{text-align:right}
+td{padding:.5rem 1rem;border-bottom:1px solid var(--border);vertical-align:middle}
+td.r{text-align:right;font-family:var(--mono);font-size:12px}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:rgba(255,255,255,.02)}
+.row-ok td:first-child{border-left:2px solid var(--green)}
+.row-bad td:first-child{border-left:2px solid var(--red)}
+.row-warn td:first-child{border-left:2px solid var(--amber)}
+/* Badges */
+.badge{display:inline-flex;align-items:center;padding:2px 7px;border-radius:20px;font-size:10px;font-weight:500;white-space:nowrap;font-family:var(--mono)}
+.badge-green{background:var(--green-bg);color:var(--green)}
+.badge-red{background:var(--red-bg);color:var(--red)}
+.badge-amber{background:var(--amber-bg);color:var(--amber)}
+.badge-gray{background:var(--bg3);color:var(--text2)}
+.badge-blue{background:rgba(79,142,247,.1);color:var(--accent)}
+/* Buttons */
+.btn{padding:.5rem 1rem;border:1px solid var(--border);border-radius:var(--r);background:transparent;color:var(--text);cursor:pointer;font-size:13px;font-family:var(--font);display:inline-flex;align-items:center;gap:.375rem;transition:all .15s}
+.btn:hover{background:var(--bg3);border-color:var(--text3)}
+.btn-primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn-primary:hover{background:var(--accent2);border-color:var(--accent2)}
+.btn-sm{padding:.25rem .625rem;font-size:12px}
+.btn-ghost{border-color:transparent}
+.btn-ghost:hover{border-color:var(--border)}
+/* Inputs */
+input[type=text],input[type=number],input[type=search],.inp{background:var(--bg3);border:1px solid var(--border);border-radius:var(--r);color:var(--text);font-size:13px;padding:.4rem .75rem;font-family:var(--font);width:100%}
+input:focus,.inp:focus{outline:none;border-color:var(--accent)}
+select{background:var(--bg3);border:1px solid var(--border);border-radius:var(--r);color:var(--text);font-size:13px;padding:.4rem .75rem;font-family:var(--font)}
+select:focus{outline:none;border-color:var(--accent)}
+/* Toolbar */
+.toolbar{display:flex;gap:.5rem;align-items:center;margin-bottom:.875rem}
+.toolbar-spacer{flex:1}
+/* Alert */
+.alert{padding:.75rem 1rem;border-radius:var(--r);font-size:12px;margin-bottom:.875rem;display:flex;align-items:flex-start;gap:.625rem;border:1px solid}
+.alert-blue{background:rgba(79,142,247,.08);border-color:rgba(79,142,247,.2);color:#7eb3ff}
+.alert-amber{background:var(--amber-bg);border-color:rgba(245,158,11,.25);color:var(--amber)}
+.alert-green{background:var(--green-bg);border-color:rgba(34,197,94,.25);color:var(--green)}
+/* Price editor table */
+.price-edit-input{background:transparent;border:none;border-bottom:1px solid var(--border);color:var(--text);font-size:12px;font-family:var(--mono);width:90px;text-align:right;padding:1px 4px}
+.price-edit-input:focus{outline:none;border-bottom-color:var(--accent)}
+.price-source{font-size:10px;font-family:var(--mono)}
+.src-purchase{color:var(--accent)}
+.src-stock{color:var(--green)}
+.src-manual{color:var(--amber)}
+.src-none{color:var(--text3)}
+/* Drill tree */
+.tree-row td:first-child{font-size:12px}
+.drill-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem}
+/* No data */
+.empty{text-align:center;padding:4rem 1rem;color:var(--text3)}
+.empty-icon{font-size:40px;display:block;margin-bottom:.75rem}
+/* Progress */
+.progress{height:3px;background:var(--bg4);border-radius:2px;overflow:hidden;margin:.5rem 0}
+.progress-fill{height:100%;background:var(--accent);transition:width .3s}
+/* Scrollbar */
+::-webkit-scrollbar{width:5px;height:5px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--bg4);border-radius:3px}
+::-webkit-scrollbar-thumb:hover{background:var(--text3)}
+@media print {
+  .app{display:block!important;height:auto!important}
+  .sidebar,.topbar,.toolbar,.btn,.expand-btn,.upload-zone,#btn-calc,#btn-recalc,.badge-pb{display:none!important}
+  .content{overflow:visible!important;padding:.5rem!important}
+  .section{display:none!important}
+  .section.print-target{display:block!important}
+  body,html{background:#fff!important;color:#000!important;font-size:12px}
+  table{font-size:11px}
+  th{background:#eee!important;color:#000!important}
+  td{color:#000!important;border-bottom:1px solid #ddd!important}
+  .metric{background:#f5f5f5!important;border:1px solid #ddd!important}
+  .metric-value{color:#000!important}
+  .metric-value.green{color:#155724!important}
+  .metric-value.red{color:#721c24!important}
+  .metric-label{color:#555!important}
+  .table-wrap{border:1px solid #ddd!important}
+  .detail-inner{background:#f9f9f9!important;max-height:none!important}
+  .detail-inner td,.detail-inner th{color:#333!important}
+  .badge{border:1px solid #ccc!important;color:#333!important;background:#eee!important}
+  .print-header{display:block!important}
+  @page{margin:1.5cm;size:A4 landscape}
+}
+.print-header{display:none;margin-bottom:1rem}
+/* Print modal */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1000;display:flex;align-items:center;justify-content:center}
+.modal{background:var(--bg2);border:1px solid var(--border);border-radius:var(--r2);padding:1.5rem;width:480px;max-width:95vw}
+.modal-title{font-size:16px;font-weight:500;margin-bottom:1.25rem}
+.modal-row{display:flex;align-items:center;gap:.75rem;margin-bottom:.75rem}
+.modal-row label{font-size:13px;color:var(--text2);min-width:140px}
+.modal-actions{display:flex;gap:.5rem;justify-content:flex-end;margin-top:1.25rem;padding-top:1rem;border-top:1px solid var(--border)}
+.check-row{display:flex;align-items:center;gap:.5rem;padding:.4rem 0;cursor:pointer}
+.check-row input[type=checkbox]{width:14px;height:14px;cursor:pointer;accent-color:var(--accent)}
+.check-row span{font-size:13px}
+/* Expandable rows */
+.expand-btn{background:none;border:1px solid var(--border);border-radius:4px;color:var(--text2);cursor:pointer;font-size:11px;padding:2px 7px;transition:all .15s;font-family:var(--mono)}
+.expand-btn:hover{background:var(--bg3);color:var(--text)}
+.expand-btn.open{background:rgba(79,142,247,.1);border-color:var(--accent);color:var(--accent)}
+.detail-row td{padding:0!important;border-bottom:none}
+.detail-inner{background:#1a2030;border-bottom:1px solid var(--border);overflow:hidden;max-height:0;transition:max-height .3s ease}
+.detail-inner.open{max-height:2000px}
+.detail-inner table{font-size:12px}
+.detail-inner th{background:#222a3a;font-size:10px;color:#6b7a99}
+.detail-inner td{border-bottom:1px solid rgba(255,255,255,.03);color:#9aa3b8}
+.detail-inner td:first-child{color:#c0c8dc}
+.detail-inner tr:last-child td{border-bottom:none}
+.detail-inner tr:hover td{background:rgba(255,255,255,.02)}
+/* Indent lines for nested levels */
+.detail-inner tbody tr td:first-child{border-left:2px solid rgba(79,142,247,.12)}
+</style>
+</head>
+<body>
+<div class="app">
+  <!-- Topbar -->
+  <header class="topbar">
+    <div class="logo">cost<span>.</span>calc</div>
+    <div style="font-size:12px;color:var(--text3);font-family:var(--mono)">Калькулятор себестоимости мебели</div>
+    <div class="topbar-right">
+      <span id="top-status" style="font-size:11px;color:var(--text3);font-family:var(--mono)"></span>
+      <button class="btn btn-sm" onclick="runCalc()" id="btn-recalc" style="display:none">↺ Обновить расчёт</button>
+      <button class="btn btn-sm" onclick="printCurrent()" title="Печать текущего раздела">🖨 Печать</button>
+      <button class="btn btn-primary btn-sm" onclick="runCalc()" id="btn-calc">▶ Рассчитать</button>
+    </div>
+  </header>
+
+  <!-- Sidebar -->
+  <nav class="sidebar">
+    <div class="nav-label">Данные</div>
+    <div class="nav-item active" data-tab="upload">
+      <span class="nav-icon">⬆</span> Загрузка
+    </div>
+    <div class="nav-item" data-tab="prices-editor">
+      <span class="nav-icon">✎</span> Цены сырья
+      <span id="badge-missing" class="badge badge-amber" style="margin-left:auto;display:none">0</span>
+    </div>
+    <div class="nav-item" data-tab="pricebook">
+      <span class="nav-icon">📖</span> Справочник цен
+      <span id="badge-pb" class="badge badge-blue" style="margin-left:auto;display:none">0</span>
+    </div>
+    <div class="nav-sep"></div>
+    <div class="nav-label">Анализ</div>
+    <div class="nav-item" data-tab="calc">
+      <span class="nav-icon">≡</span> Расчёт
+    </div>
+    <div class="nav-item" data-tab="drill">
+      <span class="nav-icon">⊞</span> Детализация
+    </div>
+    <div class="nav-item" data-tab="report">
+      <span class="nav-icon">◈</span> Отчёт
+    </div>
+    <div class="nav-sep"></div>
+    <div class="nav-label">Экспорт</div>
+    <div class="nav-item" onclick="exportCSV()">
+      <span class="nav-icon">↓</span> Скачать Excel
+    </div>
+  </nav>
+
+  <!-- Content -->
+  <main class="content">
+
+    <!-- UPLOAD -->
+    <div id="tab-upload" class="section active">
+      <div class="alert alert-blue">
+        <span>ℹ</span>
+        <div>Загрузите три файла из 1С:УНФ. Порядок не важен. После загрузки нажмите <strong>▶ Рассчитать</strong> в шапке.</div>
+      </div>
+      <div class="upload-grid">
+        <div class="upload-zone" id="uz-sales" onclick="document.getElementById('f-sales').click()">
+          <span class="upload-icon">🛒</span>
+          <div class="upload-title">Продажи</div>
+          <div class="upload-hint">Реализация товаров<br>Номенклатура + Кол-во + Выручка</div>
+          <div class="upload-status" id="us-sales">—</div>
+          <input type="file" id="f-sales" accept=".xlsx,.xls,.csv" style="display:none" onchange="loadSales(this)">
+        </div>
+        <div class="upload-zone" id="uz-prices" onclick="document.getElementById('f-prices').click()">
+          <span class="upload-icon">🏷</span>
+          <div class="upload-title">Цены закупок <span class="badge badge-gray" style="font-size:10px">сохраняются</span></div>
+          <div class="upload-hint">Анализ закупок<br>Номенклатура + Цена</div>
+          <div class="upload-status" id="us-prices">—</div>
+          <input type="file" id="f-prices" accept=".xlsx,.xls,.csv" style="display:none" onchange="loadPrices(this)">
+        </div>
+        <div id="cache-label-prices" style="margin-top:.25rem;padding:0 .25rem"></div>
+        <div style="text-align:right;margin-top:.25rem">
+          <button class="btn btn-sm btn-ghost" style="font-size:11px;color:var(--red)" onclick="lsClear('costcalc_prices');S.purchasePrices={};S.ready.prices=false;setUploaded('uz-prices','us-prices','—','');document.getElementById('uz-prices').classList.remove('loaded');document.getElementById('cache-label-prices').innerHTML='';checkReady()">✕ сбросить кэш</button>
+        </div>
+        <div class="upload-zone" id="uz-specs" onclick="document.getElementById('f-specs').click()">
+          <span class="upload-icon">📋</span>
+          <div class="upload-title">Спецификации <span class="badge badge-gray" style="font-size:10px">сохраняются</span></div>
+          <div class="upload-hint">Универсальный отчёт<br>«Спецификации по умолчанию»</div>
+          <div class="upload-status" id="us-specs">—</div>
+          <input type="file" id="f-specs" accept=".xlsx,.xls" style="display:none" onchange="loadSpecs(this)">
+        </div>
+        <div id="cache-label-specs" style="margin-top:.25rem;padding:0 .25rem"></div>
+        <div style="text-align:right;margin-top:.25rem">
+          <button class="btn btn-sm btn-ghost" style="font-size:11px;color:var(--red)" onclick="lsClear('costcalc_specs');S.specs={};S.allMaterials=new Set();S.ready.specs=false;setUploaded('uz-specs','us-specs','—','');document.getElementById('uz-specs').classList.remove('loaded');document.getElementById('cache-label-specs').innerHTML='';checkReady()">✕ сбросить кэш</button>
+        </div>
+      </div>
+      <div class="upload-zone" id="uz-stock" onclick="document.getElementById('f-stock').click()" style="display:none;text-align:left;padding:1rem 1.25rem">
+        <div style="display:flex;align-items:center;gap:.75rem">
+          <span style="font-size:20px">📦</span>
+          <div>
+            <div class="upload-title" style="margin-bottom:.15rem">Остатки со себестоимостью <span class="badge badge-gray">опционально</span></div>
+            <div class="upload-hint">Если сырьё есть на складе, но не было последних закупок — выгрузите остатки с колонкой «Себестоимость» из 1С</div>
+          </div>
+          <div class="upload-status" id="us-stock" style="margin:0;margin-left:auto">—</div>
+        </div>
+        <input type="file" id="f-stock" accept=".xlsx,.xls,.csv" style="display:none" onchange="loadStock(this)">
+      </div>
+      <div class="metrics" id="upload-metrics" style="display:none"></div>
+    </div>
+
+    <!-- PRICES EDITOR -->
+    <div id="tab-prices-editor" class="section">
+      <div class="card">
+        <div class="card-title">Цены на сырьё</div>
+        <div class="alert alert-amber" id="alert-missing-prices" style="display:none">
+          <span>⚠</span>
+          <div>По выделенным позициям цена не найдена ни в закупках, ни в остатках. Введите вручную или загрузите файл остатков.</div>
+        </div>
+        <div class="toolbar">
+          <input type="search" class="inp" style="width:280px" placeholder="Поиск..." id="price-q" oninput="renderPricesEditor()">
+          <select id="price-filter" onchange="renderPricesEditor()">
+            <option value="all">Все позиции</option>
+            <option value="missing">Нет цены</option>
+            <option value="manual">Ручной ввод</option>
+            <option value="stock">Из остатков</option>
+            <option value="purchase">Из закупок</option>
+          </select>
+          <span class="toolbar-spacer"></span>
+          <button class="btn btn-sm" onclick="exportPricesEditor()">↓ Выгрузить xlsx</button>
+          <div class="upload-zone" onclick="document.getElementById('f-prices-import').click()" style="padding:.4rem 1rem;display:inline-flex;align-items:center;gap:.5rem;border-style:solid;border-radius:var(--r)">
+            <span>⬆</span><span style="font-size:12px">Загрузить с ценами</span>
+          </div>
+          <input type="file" id="f-prices-import" accept=".xlsx,.xls,.csv" style="display:none" onchange="importPricesEditor(this)">
+          <div class="upload-zone" onclick="document.getElementById('f-stock2').click()" style="padding:.4rem 1rem;display:inline-flex;align-items:center;gap:.5rem;border-style:solid;border-radius:var(--r)">
+            <span>📦</span><span style="font-size:12px">Загрузить остатки</span>
+          </div>
+          <input type="file" id="f-stock2" accept=".xlsx,.xls,.csv" style="display:none" onchange="loadStock(this)">
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr>
+              <th>Номенклатура</th>
+              <th class="r">Цена из закупок</th>
+              <th class="r">Цена из остатков</th>
+              <th class="r">Ручная цена</th>
+              <th class="r">Итоговая цена</th>
+              <th>Источник</th>
+            </tr></thead>
+            <tbody id="prices-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- CALC -->
+    <div id="tab-calc" class="section">
+      <div id="calc-empty" class="empty"><span class="empty-icon">🧮</span>Загрузите данные и нажмите «Рассчитать»</div>
+      <div id="calc-content" style="display:none">
+        <div class="metrics" id="calc-metrics"></div>
+        <div class="toolbar">
+          <input type="search" class="inp" style="width:240px" placeholder="Поиск модели..." id="calc-q" oninput="renderCalcTable()">
+          <select id="calc-filter" onchange="renderCalcTable()">
+            <option value="all">Все</option>
+            <option value="ok">Прибыльные</option>
+            <option value="bad">Убыточные</option>
+            <option value="partial">Неполный расчёт</option>
+            <option value="nospec">Нет спецификации</option>
+          </select>
+          <span class="toolbar-spacer"></span>
+          <button class="btn btn-sm" onclick="exportCSV()">↓ Excel</button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr>
+              <th>Модель</th>
+              <th>Характеристика</th>
+              <th class="r">Кол-во</th>
+              <th class="r">Выручка, ₽</th>
+              <th class="r">Себест/ед</th>
+              <th class="r">Себест итого</th>
+              <th class="r">Маржа, ₽</th>
+              <th class="r">Маржа, %</th>
+              <th>Статус</th>
+            </tr></thead>
+            <tbody id="calc-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- DRILL -->
+    <div id="tab-drill" class="section">
+      <div class="toolbar">
+        <select id="drill-select" style="flex:1;max-width:500px" onchange="renderDrill()">
+          <option value="">— выберите модель для детализации —</option>
+        </select>
+      </div>
+      <div id="drill-content">
+        <div class="empty"><span class="empty-icon">⊞</span>Выберите модель</div>
+      </div>
+    </div>
+
+    <!-- REPORT -->
+    <div id="tab-report" class="section">
+      <div id="report-empty" class="empty"><span class="empty-icon">◈</span>Выполните расчёт</div>
+      <div id="report-content" style="display:none">
+        <div class="metrics" id="report-metrics"></div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem">
+          <div class="card">
+            <div class="card-title">Топ убыточных позиций</div>
+            <table><thead><tr><th>Модель</th><th class="r">Маржа, ₽</th><th class="r">%</th></tr></thead>
+            <tbody id="report-bad"></tbody></table>
+          </div>
+          <div class="card">
+            <div class="card-title">Топ прибыльных позиций</div>
+            <table><thead><tr><th>Модель</th><th class="r">Маржа, ₽</th><th class="r">%</th></tr></thead>
+            <tbody id="report-good"></tbody></table>
+          </div>
+        </div>
+        <div class="card" id="report-nospec-card" style="display:none">
+          <div class="card-title">Без спецификации</div>
+          <div id="report-nospec" style="display:flex;flex-wrap:wrap;gap:4px"></div>
+        </div>
+        <div class="card" id="report-noprice-card" style="display:none">
+          <div class="card-title">Сырьё без цены (себестоимость занижена)</div>
+          <div class="table-wrap" style="border:none">
+            <table><thead><tr><th>Материал</th><th>Встречается в изделиях</th></tr></thead>
+            <tbody id="report-noprice"></tbody></table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- PRICEBOOK -->
+    <div id="tab-pricebook" class="section">
+      <div class="card">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem">
+          <div>
+            <div class="card-title" style="margin-bottom:.25rem">Справочник цен</div>
+            <div style="font-size:12px;color:var(--text2)">Наивысший приоритет в расчёте. Перекрывает цены из закупок и остатков. Сохраняется в браузере между сессиями.</div>
+          </div>
+          <div style="display:flex;gap:.5rem">
+            <span id="pb-save-indicator" style="font-size:12px;color:var(--green);opacity:0;transition:opacity .3s;display:inline-flex;align-items:center;margin-right:.25rem">✓ сохранено</span>
+            <button class="btn btn-primary btn-sm" onclick="manualSavePricebook()">💾 Сохранить</button>
+            <button class="btn btn-sm" onclick="exportPricebook()">↓ Скачать xlsx</button>
+            <div class="upload-zone" onclick="document.getElementById('f-pb-import').click()" style="padding:.4rem 1rem;display:inline-flex;align-items:center;gap:.5rem;border-style:solid;border-radius:var(--r);cursor:pointer">
+              <span>⬆</span><span style="font-size:12px">Загрузить xlsx</span>
+            </div>
+            <input type="file" id="f-pb-import" accept=".xlsx,.xls,.csv" style="display:none" onchange="importPricebook(this)">
+            <button class="btn btn-sm" style="color:var(--red);border-color:var(--red)" onclick="clearPricebook()">✕ Очистить всё</button>
+          </div>
+        </div>
+
+        <div style="display:flex;gap:.5rem;margin-bottom:1rem;align-items:center">
+          <input type="search" class="inp" style="width:300px" placeholder="Поиск по названию..." id="pb-q" oninput="renderPricebook()">
+          <select id="pb-filter" onchange="renderPricebook()">
+            <option value="all">Все позиции</option>
+            <option value="override">Только с ценой в справочнике</option>
+            <option value="empty">Без цены (для заполнения)</option>
+          </select>
+          <span style="font-size:12px;color:var(--text2);margin-left:.5rem" id="pb-count-label"></span>
+        </div>
+
+        <div id="ls-warning" style="display:none;background:var(--red-bg);border:1px solid rgba(239,68,68,.3);border-radius:var(--r);padding:.625rem 1rem;font-size:12px;color:var(--red);margin-bottom:1rem">
+          ⛔ Браузер не разрешает сохранение (возможно, режим инкогнито или открыт файл напрямую с диска). Цены НЕ сохранятся между сессиями. Решение: выложите файл на хостинг (GitHub Pages) или используйте «↓ Скачать xlsx» как резервную копию.
+        </div>
+        <div style="background:var(--amber-bg);border:1px solid rgba(245,158,11,.25);border-radius:var(--r);padding:.625rem 1rem;font-size:12px;color:var(--amber);margin-bottom:1rem">
+          ⚠ Пример проблемы: винт по цене за 1000 шт — в справочнике укажите цену за 1 шт. Тогда расчёт будет верным вне зависимости от того что в выгрузке закупок.
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <thead><tr>
+              <th style="min-width:300px">Номенклатура</th>
+              <th class="r" style="min-width:80px">Ед.</th>
+              <th class="r">Цена (закупки)</th>
+              <th class="r">Цена (остатки)</th>
+              <th class="r" style="min-width:140px">Цена в справочнике ↑</th>
+              <th style="min-width:120px">Комментарий</th>
+            </tr></thead>
+            <tbody id="pb-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+  </main>
+<!-- Print Modal -->
+<div id="print-modal" class="modal-overlay" style="display:none" onclick="if(event.target===this)closePrintModal()">
+  <div class="modal">
+    <div class="modal-title">🖨 Настройки печати</div>
+
+    <div style="margin-bottom:1rem">
+      <div style="font-size:11px;color:var(--text2);text-transform:uppercase;letter-spacing:.05em;margin-bottom:.5rem">Что печатать</div>
+      <label class="check-row"><input type="checkbox" id="pr-calc" checked><span>Таблица расчёта (выручка, себестоимость, маржа)</span></label>
+      <label class="check-row"><input type="checkbox" id="pr-totals" checked><span>Итоговые метрики (4 карточки вверху)</span></label>
+      <label class="check-row"><input type="checkbox" id="pr-details"><span>Детализация по составу (раскрыть все)</span></label>
+      <label class="check-row"><input type="checkbox" id="pr-report"><span>Отчёт (топ убыточных, топ прибыльных)</span></label>
+      <label class="check-row"><input type="checkbox" id="pr-noprice"><span>Список материалов без цены</span></label>
+    </div>
+
+    <div style="margin-bottom:1rem">
+      <div style="font-size:11px;color:var(--text2);text-transform:uppercase;letter-spacing:.05em;margin-bottom:.5rem">Фильтр строк</div>
+      <div class="modal-row">
+        <label>Показать позиции</label>
+        <select id="pr-filter" style="flex:1">
+          <option value="all">Все</option>
+          <option value="ok">Только прибыльные</option>
+          <option value="bad">Только убыточные</option>
+          <option value="partial">Неполный расчёт</option>
+          <option value="nospec">Без спецификации</option>
+        </select>
+      </div>
+    </div>
+
+    <div style="margin-bottom:.5rem">
+      <div style="font-size:11px;color:var(--text2);text-transform:uppercase;letter-spacing:.05em;margin-bottom:.5rem">Параметры страницы</div>
+      <div class="modal-row">
+        <label>Ориентация</label>
+        <select id="pr-orient" style="flex:1">
+          <option value="landscape">Альбомная (A4)</option>
+          <option value="portrait">Книжная (A4)</option>
+        </select>
+      </div>
+      <div class="modal-row">
+        <label>Заголовок</label>
+        <input type="text" class="inp" id="pr-title" placeholder="напр. Отчёт за июнь 2026" style="flex:1">
+      </div>
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn" onclick="closePrintModal()">Отмена</button>
+      <button class="btn btn-primary" onclick="doPrint()">🖨 Печатать</button>
+    </div>
+  </div>
+</div>
+
+</div>
+
+<script>
+// ── State ──────────────────────────────────────────────────────────────────
+const S = {
+  sales: [],
+  purchasePrices: {},   // nom_lower -> price
+  stockPrices: {},      // nom_lower -> price
+  manualPrices: {},     // nom_lower -> price (user entered, session only)
+  pricebook: {},        // nom_lower -> {price, unit, comment} — persisted in localStorage
+  specs: {},
+  allMaterials: new Set(),
+  calcRows: [],
+  ready: { sales: false, prices: false, specs: false }
+};
+
+// ── Persistence (localStorage) ───────────────────────────────────────────
+const LS = {
+  PRICEBOOK: 'costcalc_pricebook',
+  SPECS:     'costcalc_specs',
+  PRICES:    'costcalc_prices',
+};
+
+function lsSave(key, data) {
+  try {
+    const json = JSON.stringify(data);
+    localStorage.setItem(key, json);
+    // Проверяем что реально записалось
+    const check = localStorage.getItem(key);
+    if (check === json) return true;
+    console.warn('localStorage verify failed:', key);
+    return false;
+  } catch(e) {
+    console.warn('localStorage save failed:', key, e);
+    return false;
+  }
+}
+
+// Проверка доступности localStorage при старте
+function lsAvailable() {
+  try {
+    const t = '__test__';
+    localStorage.setItem(t, '1');
+    const ok = localStorage.getItem(t) === '1';
+    localStorage.removeItem(t);
+    return ok;
+  } catch(e) { return false; }
+}
+function lsLoad(key) {
+  try { const r = localStorage.getItem(key); return r ? JSON.parse(r) : null; }
+  catch(e) { return null; }
+}
+function lsClear(key) { try { localStorage.removeItem(key); } catch(e) {} }
+
+// ── Pricebook persistence ─────────────────────────────────────────────────
+function pbLoad() {
+  const saved = lsLoad(LS.PRICEBOOK);
+  if (saved) {
+    // Миграция: перенормализуем ключи (на случай смены логики norm())
+    const migrated = {};
+    for (const [k, v] of Object.entries(saved)) {
+      const nk = norm(k);
+      migrated[nk] = v;
+    }
+    S.pricebook = migrated;
+    lsSave(LS.PRICEBOOK, S.pricebook);
+  }
+  updatePbBadge();
+}
+function pbSave() {
+  lsSave(LS.PRICEBOOK, S.pricebook);
+  updatePbBadge();
+  // Мигаем индикатором «сохранено»
+  const ind = document.getElementById('pb-save-indicator');
+  if (ind) {
+    ind.style.opacity = '1';
+    clearTimeout(window._pbSaveTimer);
+    window._pbSaveTimer = setTimeout(() => { ind.style.opacity = '0'; }, 1500);
+  }
+}
+function updatePbBadge() {
+  const cnt = Object.keys(S.pricebook).length;
+  const badge = document.getElementById('badge-pb');
+  if (badge) { badge.textContent = cnt; badge.style.display = cnt > 0 ? 'inline-flex' : 'none'; }
+}
+
+// ── Specs + Prices persistence ────────────────────────────────────────────
+function specsLoad() {
+  const saved = lsLoad(LS.SPECS);
+  if (saved && saved.specs && Object.keys(saved.specs).length > 0) {
+    // Restore specs — convert arrays back (JSON doesn't preserve Set/Map)
+    S.specs = saved.specs;
+    S.allMaterials = new Set(saved.allMaterials || []);
+    S.ready.specs = true;
+    const cnt = Object.keys(S.specs).length;
+    setUploaded('uz-specs', 'us-specs', saved.fname || 'из кэша', cnt + ' спецификаций');
+    document.getElementById('uz-stock').style.display = 'block';
+    updateCacheLabel('specs', saved.fname, saved.date);
+    return true;
+  }
+  return false;
+}
+function specsSave(fname) {
+  const ok = lsSave(LS.SPECS, {
+    specs: S.specs,
+    allMaterials: [...S.allMaterials],
+    fname,
+    date: new Date().toLocaleDateString('ru-RU')
+  });
+  if (ok) updateCacheLabel('specs', fname, new Date().toLocaleDateString('ru-RU'));
+}
+
+function pricesLoad() {
+  const saved = lsLoad(LS.PRICES);
+  if (saved && saved.prices && Object.keys(saved.prices).length > 0) {
+    // Перенормализуем ключи цен
+    const mp = {};
+    for (const [k, v] of Object.entries(saved.prices)) mp[norm(k)] = v;
+    S.purchasePrices = mp;
+    S.ready.prices = true;
+    const cnt = Object.keys(S.purchasePrices).length;
+    setUploaded('uz-prices', 'us-prices', saved.fname || 'из кэша', cnt + ' позиций');
+    updateCacheLabel('prices', saved.fname, saved.date);
+    return true;
+  }
+  return false;
+}
+function pricesSave(fname) {
+  const ok = lsSave(LS.PRICES, {
+    prices: S.purchasePrices,
+    fname,
+    date: new Date().toLocaleDateString('ru-RU')
+  });
+  if (ok) updateCacheLabel('prices', fname, new Date().toLocaleDateString('ru-RU'));
+}
+
+function updateCacheLabel(type, fname, date) {
+  const elId = 'cache-label-' + type;
+  const el = document.getElementById(elId);
+  if (el) el.innerHTML = `<span style="color:var(--green);font-size:11px">💾 сохранено ${date} · ${fname}</span>`;
+}
+
+// Init on load
+pbLoad();
+const specsRestored  = specsLoad();
+const pricesRestored = pricesLoad();
+if (specsRestored || pricesRestored) {
+  checkReady();
+  if (specsRestored && S.allMaterials.size) renderPricesEditor();
+}
+
+// effective price: pricebook > manual > stock > purchase
+function getPrice(nom) {
+  const k = norm(nom);
+  // Справочник только если цена > 0
+  if (S.pricebook[k] != null && S.pricebook[k].price > 0) return { price: S.pricebook[k].price, src: 'pricebook' };
+  if (S.manualPrices[k] != null && S.manualPrices[k] > 0) return { price: S.manualPrices[k], src: 'manual' };
+  if (S.stockPrices[k] != null && S.stockPrices[k] > 0) return { price: S.stockPrices[k], src: 'stock' };
+  if (S.purchasePrices[k] != null && S.purchasePrices[k] > 0) return { price: S.purchasePrices[k], src: 'purchase' };
+  return { price: 0, src: 'none' };
+}
+
+// ── Navigation ─────────────────────────────────────────────────────────────
+document.querySelectorAll('.nav-item[data-tab]').forEach(el => {
+  el.addEventListener('click', () => switchTab(el.dataset.tab));
+});
+function switchTab(name) {
+  document.querySelectorAll('.nav-item[data-tab]').forEach(e => e.classList.toggle('active', e.dataset.tab === name));
+  document.querySelectorAll('.section').forEach(s => s.classList.toggle('active', s.id === 'tab-' + name));
+}
+
+// ── File reading ────────────────────────────────────────────────────────────
+function readXlsx(file, cb) {
+  const r = new FileReader();
+  r.onload = e => {
+    const wb = XLSX.read(e.target.result, { type: 'array' });
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    cb(XLSX.utils.sheet_to_json(ws, { header: 1 }));
+  };
+  r.readAsArrayBuffer(file);
+}
+
+function findHeader(rows) {
+  for (let i = 0; i < Math.min(rows.length, 12); i++) {
+    if (rows[i] && rows[i].some(c => String(c || '').includes('Номенклатур'))) return i;
+  }
+  return 0;
+}
+
+function norm(s) {
+  let r = String(s || '').toLowerCase().trim().replace(/\s+/g, ' ');
+  // Унификация латинских и кириллических двойников (частая проблема в 1С:
+  // "Винт ST3.5х16" — х кириллическая, "ST3.5x16" — x латинская)
+  const map = {
+    'a':'а','b':'в','c':'с','e':'е','h':'н','k':'к','m':'м','o':'о','p':'р','t':'т','x':'х','y':'у'
+  };
+  // Приводим латинские буквы-двойники к кириллице
+  r = r.replace(/[abcehkmoptxy]/g, ch => map[ch] || ch);
+  return r;
+}
+
+// ── Load Sales ──────────────────────────────────────────────────────────────
+function loadSales(inp) {
+  if (!inp.files[0]) return;
+  readXlsx(inp.files[0], rows => {
+    const hdr = findHeader(rows);
+    const ci = { nom: -1, char: -1, qty: -1, rev: -1 };
+    (rows[hdr] || []).forEach((c, i) => {
+      const s = norm(c);
+      if (s.includes('номенклат')) ci.nom = i;
+      else if (s.includes('характер')) ci.char = i;
+      else if (s.includes('количест')) ci.qty = i;
+      else if (s.includes('выручк') || s.includes('сумм')) ci.rev = i;
+    });
+    S.sales = [];
+    for (let i = hdr + 1; i < rows.length; i++) {
+      const r = rows[i];
+      if (!r || !r[ci.nom]) continue;
+      const nomStr = String(r[ci.nom] || '').trim();
+      // Пропускаем строки-итоги: "Итого", "Всего", "Итого по...", пустые номенклатуры
+      if (!nomStr || /^итого/i.test(nomStr) || /^всего/i.test(nomStr) || /^total/i.test(nomStr)) continue;
+      S.sales.push({
+        nom: nomStr,
+        char: String(r[ci.char] || '').trim().replace(/^nan$/i, ''),
+        qty: +String(r[ci.qty] || '0').replace(',', '.') || 0,
+        rev: +String(r[ci.rev] || '0').replace(',', '.') || 0
+      });
+    }
+    S.ready.sales = true;
+    setUploaded('uz-sales', 'us-sales', inp.files[0].name, S.sales.length + ' позиций');
+    checkReady();
+    // Авторасчёт если спеки и цены уже загружены из кэша
+    if (S.ready.specs && S.ready.prices) {
+      setTimeout(() => runCalc(), 100);
+    }
+  });
+}
+
+// ── Load Prices ─────────────────────────────────────────────────────────────
+function loadPrices(inp) {
+  if (!inp.files[0]) return;
+  readXlsx(inp.files[0], rows => {
+    const hdr = findHeader(rows);
+    const ci = { nom: -1, price: -1 };
+    (rows[hdr] || []).forEach((c, i) => {
+      const s = norm(c);
+      if (s.includes('номенклат')) ci.nom = i;
+      else if (s.includes('цена') || s.includes('стоим')) ci.price = i;
+    });
+    S.purchasePrices = {};
+    for (let i = hdr + 1; i < rows.length; i++) {
+      const r = rows[i];
+      if (!r || !r[ci.nom]) continue;
+      const p = +String(r[ci.price] || '0').replace(',', '.') || 0;
+      if (p > 0) S.purchasePrices[norm(r[ci.nom])] = p;
+    }
+    S.ready.prices = true;
+    setUploaded('uz-prices', 'us-prices', inp.files[0].name, Object.keys(S.purchasePrices).length + ' позиций');
+    pricesSave(inp.files[0].name);
+    checkReady();
+  });
+}
+
+// ── Load Specs ──────────────────────────────────────────────────────────────
+function loadSpecs(inp) {
+  if (!inp.files[0]) return;
+  document.getElementById('us-specs').textContent = 'Читаем...';
+  readXlsx(inp.files[0], rows => {
+    S.specs = {};
+    let current = null;
+    for (let i = 7; i < rows.length; i++) {
+      const r = rows[i];
+      if (!r) continue;
+      const c0 = String(r[0] || '').trim();
+      const c3 = String(r[3] || '').trim();
+      const c5 = String(r[5] || '').trim();
+      if (!c0 || c0 === 'nan') continue;
+      const num = parseFloat(c5.replace(',', '.'));
+      if (!isNaN(num) && c5 !== '') {
+        if (current) S.specs[current].components.push({ name: c0, unit: c3 !== 'nan' ? c3 : '', qty: num });
+      } else {
+        const char = (c3 !== 'nan' && c3) ? c3 : '';
+        const key = norm(c0) + '|' + norm(char);
+        current = key;
+        if (!S.specs[key]) S.specs[key] = { nom: c0, char, components: [] };
+      }
+    }
+    // collect all leaf materials
+    S.allMaterials = new Set();
+    collectLeaves(new Set());
+    // Дополнительно добавляем ВСЕ компоненты всех спецификаций
+    // (collectLeaves может пропускать некоторые материалы при глубокой вложенности)
+    Object.values(S.specs).forEach(sp => {
+      (sp.components || []).forEach(c => S.allMaterials.add(norm(c.name)));
+    });
+    S.ready.specs = true;
+    setUploaded('uz-specs', 'us-specs', inp.files[0].name, Object.keys(S.specs).length + ' спецификаций');
+    document.getElementById('uz-stock').style.display = 'block';
+    specsSave(inp.files[0].name);
+    checkReady();
+  });
+}
+
+function collectLeaves(visited) {
+  function walk(nom, char, depth) {
+    if (depth > 8) return;
+    const key = findSpec(nom, char);
+    if (!key) { S.allMaterials.add(norm(nom)); return; }
+    if (visited.has(key)) return;
+    visited.add(key);
+    (S.specs[key].components || []).forEach(c => walk(c.name, c.char || '', depth + 1));
+    visited.delete(key);
+  }
+  Object.values(S.specs).forEach(sp => walk(sp.nom, sp.char, 0));
+}
+
+// ── Load Stock ──────────────────────────────────────────────────────────────
+function loadStock(inp) {
+  if (!inp.files[0]) return;
+  readXlsx(inp.files[0], rows => {
+    // Остатки из 1С могут иметь двухстрочную шапку (строка 1: группа, строка 2: колонки)
+    // Ищем строку с "Номенклатур" среди первых 5 строк
+    let hdr = -1;
+    for (let i = 0; i < Math.min(rows.length, 8); i++) {
+      if (rows[i] && rows[i].some(c => String(c||'').includes('Номенклатур'))) { hdr = i; break; }
+    }
+    if (hdr < 0) hdr = 0;
+
+    const ci = { nom: -1, cost: -1 };
+    // Объединяем строку шапки и строку выше (если есть) — для двухстрочных шапок
+    const hdrRow = [...(rows[hdr] || [])];
+    const prevRow = hdr > 0 ? (rows[hdr-1] || []) : [];
+    // Мержим: если в hdrRow ячейка пустая — берём из prevRow
+    const mergedHdr = hdrRow.map((c, i) => c || prevRow[i] || '');
+
+    console.log('Stock merged header:', mergedHdr);
+    mergedHdr.forEach((c, i) => {
+      const s = norm(c);
+      if (s.includes('номенклат')) ci.nom = i;
+      else if (s.includes('себестоим') || s.includes('стоимост') || s.includes('цена')) {
+        if (ci.cost === -1) ci.cost = i;
+      }
+    });
+    console.log('Stock col indices:', ci);
+    S.stockPrices = {};
+    for (let i = hdr + 1; i < rows.length; i++) {
+      const r = rows[i];
+      if (!r || !r[ci.nom]) continue;
+      const raw = String(r[ci.cost] || '0').replace(/\s/g,'').replace(',', '.');
+      const p = parseFloat(raw) || 0;
+      if (p > 0) S.stockPrices[norm(r[ci.nom])] = p;
+    }
+    const cnt = Object.keys(S.stockPrices).length;
+    console.log('Stock prices loaded:', cnt, Object.entries(S.stockPrices).slice(0,3));
+    // Update status in both upload zones
+    ['us-stock'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) { el.textContent = cnt + ' позиций'; el.style.display = 'block'; }
+    });
+    document.getElementById('uz-stock').classList.add('loaded');
+    // Show recalc button if calc was already done
+    if (S.calcRows.length) {
+      document.getElementById('btn-recalc').style.display = 'inline-flex';
+    }
+    renderPricesEditor();
+    if (S.calcRows.length) runCalc();
+  });
+}
+
+// ── Helpers ─────────────────────────────────────────────────────────────────
+function findSpec(nom, char) {
+  const n = norm(nom);
+  const c = norm(char);
+  // 1. Точное совпадение имени + характеристики
+  const k1 = n + '|' + c;
+  if (S.specs[k1]) return k1;
+  // 2. Совпадение имени без характеристики
+  const k2 = n + '|';
+  if (S.specs[k2]) return k2;
+  // 3. Имя совпадает, характеристика любая — берём первую
+  //    (полуфабрикат в составе может быть без характеристики,
+  //     а его спецификация зарегистрирована с характеристикой)
+  for (const k of Object.keys(S.specs)) {
+    if (k.startsWith(n + '|')) return k;
+  }
+  return null;
+}
+
+function calcCost(nom, char, visited, depth) {
+  if (depth > 8) return { cost: 0, full: false, missing: [nom + '(глубина)'], tree: [] };
+  const key = findSpec(nom, char);
+  if (!key) {
+    const { price, src } = getPrice(nom);
+    return { cost: price, full: price > 0, missing: price > 0 ? [] : [nom], tree: [{ name: nom, unit: '', qty: 1, cost: price, depth, leaf: true, hasPrice: price > 0, src }] };
+  }
+  const vk = norm(nom) + '|' + norm(char);
+  if (visited.has(vk)) return { cost: 0, full: false, missing: ['ЦИКЛ:' + nom], tree: [] };
+  const nv = new Set(visited); nv.add(vk);
+  const sp = S.specs[key];
+  let total = 0, full = true, missing = [], tree = [];
+  for (const comp of sp.components) {
+    const sub = calcCost(comp.name, comp.char || '', nv, depth + 1);
+    const lineC = sub.cost * comp.qty;
+    total += lineC;
+    if (!sub.full) full = false;
+    missing.push(...sub.missing);
+    // Полуфабрикат (есть спецификация) всегда раскрывается, даже если 1 компонент.
+    // leaf=true только для настоящего сырья без спецификации.
+    const isSemifab = sub.tree.length > 0 && !(sub.tree.length === 1 && sub.tree[0].leaf && norm(sub.tree[0].name) === norm(comp.name));
+    tree.push({ name: comp.name, unit: comp.unit, qty: comp.qty, cost: lineC, depth, leaf: !isSemifab, hasPrice: sub.full, src: sub.tree[0]?.src, children: isSemifab ? sub.tree : [] });
+  }
+  return { cost: total, full, missing: [...new Set(missing)], tree };
+}
+
+// ── Run Calc ─────────────────────────────────────────────────────────────────
+function runCalc(stayOnTab) {
+  if (!S.sales.length) { alert('Загрузите файл продаж'); return; }
+  S.calcRows = S.sales.map(s => {
+    const key = findSpec(s.nom, s.char);
+    let cost = 0, full = false, missing = [], tree = [];
+    if (key) {
+      const r = calcCost(s.nom, s.char, new Set(), 0);
+      cost = r.cost; full = r.full; missing = r.missing; tree = r.tree;
+    } else {
+      missing = ['нет спецификации'];
+    }
+    const totalCost = cost * s.qty;
+    const margin = s.rev - totalCost;
+    const mp = s.rev > 0 ? margin / s.rev * 100 : 0;
+    return { ...s, hasSpec: !!key, cost, totalCost, margin, mp, full, missing, tree };
+  });
+  renderCalcTable();
+  renderDrillSelect();
+  renderReport();
+  renderPricesEditor();
+  if (Object.keys(S.pricebook).length) renderPricebook();
+  // After calc: show Refresh, hide Calculate
+  document.getElementById('btn-calc').style.display = 'none';
+  document.getElementById('btn-recalc').style.display = 'inline-flex';
+  if (!stayOnTab) switchTab('calc');
+}
+
+// ── Prices Editor ────────────────────────────────────────────────────────────
+function renderPricesEditor() {
+  if (!S.allMaterials.size) return;
+  const q = norm(document.getElementById('price-q').value || '');
+  const f = document.getElementById('price-filter').value;
+  const mats = [...S.allMaterials].filter(k => {
+    const mq = !q || k.includes(q);
+    const { src } = getPrice(k);
+    if (f === 'missing') return mq && src === 'none';
+    if (f === 'manual') return mq && src === 'manual';
+    if (f === 'stock') return mq && src === 'stock';
+    if (f === 'purchase') return mq && src === 'purchase';
+    return mq;
+  }).sort((a, b) => {
+    const sa = getPrice(a).src, sb = getPrice(b).src;
+    if (sa === 'none' && sb !== 'none') return -1;
+    if (sb === 'none' && sa !== 'none') return 1;
+    return a.localeCompare(b);
+  });
+
+  const missingCount = [...S.allMaterials].filter(k => getPrice(k).src === 'none').length;
+  document.getElementById('badge-missing').textContent = missingCount;
+  document.getElementById('badge-missing').style.display = missingCount > 0 ? 'inline-flex' : 'none';
+  document.getElementById('alert-missing-prices').style.display = missingCount > 0 ? 'flex' : 'none';
+
+  const srcLabel = { purchase: '<span class="price-source src-purchase">закупки</span>', stock: '<span class="price-source src-stock">остатки</span>', manual: '<span class="price-source src-manual">вручную</span>', none: '<span class="price-source src-none">нет цены</span>' };
+  const tb = document.getElementById('prices-tbody');
+  tb.innerHTML = mats.map(k => {
+    const pp = S.purchasePrices[k] || 0;
+    const sp = S.stockPrices[k] || 0;
+    const mp = S.manualPrices[k] != null ? S.manualPrices[k] : '';
+    const { price, src } = getPrice(k);
+    return `<tr>
+      <td>${k}</td>
+      <td class="r">${pp ? fmt(pp) : '<span style="color:var(--text3)">—</span>'}</td>
+      <td class="r">${sp ? fmt(sp) : '<span style="color:var(--text3)">—</span>'}</td>
+      <td class="r"><input class="price-edit-input" type="number" value="${mp}" placeholder="ввести" data-key="${k}" onchange="setManualPrice(this)" onblur="setManualPrice(this)"></td>
+      <td class="r" style="font-weight:500;color:${src === 'none' ? 'var(--text3)' : 'var(--text)'}">${price ? fmt(price) : '—'}</td>
+      <td>${srcLabel[src] || ''}</td>
+    </tr>`;
+  }).join('') || '<tr><td colspan="6" style="text-align:center;padding:2rem;color:var(--text3)">Нет позиций</td></tr>';
+}
+
+function setManualPrice(inp) {
+  const k = inp.dataset.key;
+  const v = parseFloat(inp.value);
+  if (!isNaN(v) && v > 0) S.manualPrices[k] = v;
+  else delete S.manualPrices[k];
+  renderPricesEditor();
+  if (S.calcRows.length) {
+    clearTimeout(window._recalcTimer2);
+    window._recalcTimer2 = setTimeout(() => runCalc(true), 400);
+  }
+}
+
+// Выгрузка всех материалов с ценами в xlsx
+function exportPricesEditor() {
+  const wb = XLSX.utils.book_new();
+  const hdr = ['Номенклатура', 'Цена из закупок', 'Цена из остатков', 'Ручная/справочник', 'Итоговая цена', 'Источник'];
+  const srcRu = { purchase: 'закупки', stock: 'остатки', manual: 'вручную', pricebook: 'справочник', none: 'НЕТ ЦЕНЫ' };
+  // Объединяем ВСЕ известные источники: материалы из спецификаций + закупочные цены + остатки + справочник
+  const allKeys = new Set([
+    ...S.allMaterials,
+    ...Object.keys(S.purchasePrices),
+    ...Object.keys(S.stockPrices),
+    ...Object.keys(S.pricebook)
+  ]);
+  const sorted = [...allKeys].sort((a,b) => a.localeCompare(b,'ru'));
+  const rows = sorted.map(k => {
+    const { price, src } = getPrice(k);
+    const manualOrPb = (S.pricebook[k]?.price > 0 ? S.pricebook[k].price : '') || (S.manualPrices[k] > 0 ? S.manualPrices[k] : '') || '';
+    return [k, S.purchasePrices[k] || '', S.stockPrices[k] || '', manualOrPb, price || '', srcRu[src] || ''];
+  });
+  const ws = XLSX.utils.aoa_to_sheet([hdr, ...rows]);
+  ws['!cols'] = [{wch:45},{wch:16},{wch:16},{wch:18},{wch:16},{wch:14}];
+  // Подсветка строк без цены
+  rows.forEach((row, ri) => {
+    if (!row[4]) { // нет итоговой цены
+      const cell = XLSX.utils.encode_cell({r: ri+1, c: 0});
+      if (ws[cell]) ws[cell].s = { fill: { fgColor: { rgb: 'FFF3CD' } } };
+    }
+  });
+  XLSX.utils.book_append_sheet(wb, ws, 'Цены сырья');
+  const noPrice = rows.filter(r => !r[4]).length;
+  XLSX.utils.book_append_sheet(wb,
+    XLSX.utils.aoa_to_sheet([hdr, ...rows.filter(r => !r[4])]),
+    `Нет цены (${noPrice})`
+  );
+  const date = new Date().toLocaleDateString('ru-RU').replace(/\./g,'-');
+  XLSX.writeFile(wb, `tseny_syrya_${date}.xlsx`);
+}
+
+// Загрузка цен — колонка "Ручная/справочник" или "Итоговая" пишется в справочник
+function importPricesEditor(inp) {
+  if (!inp.files[0]) return;
+  const r = new FileReader();
+  r.onload = e => {
+    const wb = XLSX.read(e.target.result, { type: 'array' });
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    const rows = XLSX.utils.sheet_to_json(ws, { header: 1 });
+    let hdr = -1;
+    for (let i = 0; i < Math.min(rows.length, 5); i++) {
+      if (rows[i] && rows[i].some(c => String(c||'').includes('Номенклат'))) { hdr = i; break; }
+    }
+    if (hdr < 0) hdr = 0;
+    // Определяем колонки
+    const ci = { nom: -1, manual: -1, total: -1 };
+    (rows[hdr]||[]).forEach((c, i) => {
+      const s = norm(c);
+      if (s.includes('номенклат')) ci.nom = i;
+      else if (s.includes('ручная') || s.includes('справочник')) ci.manual = i;
+      else if (s.includes('итогова') || s.includes('цена')) { if (ci.total === -1) ci.total = i; }
+    });
+    // Берём цену из "ручная/справочник", если пусто — из "итоговая"
+    let added = 0;
+    for (let i = hdr + 1; i < rows.length; i++) {
+      const row = rows[i]; if (!row || !row[ci.nom]) continue;
+      const k = norm(row[ci.nom]);
+      let priceRaw = ci.manual >= 0 ? row[ci.manual] : '';
+      if (!priceRaw && ci.total >= 0) priceRaw = row[ci.total];
+      const p = parseFloat(String(priceRaw || '0').replace(',', '.').replace(/\s/g, '')) || 0;
+      if (p > 0) {
+        if (!S.pricebook[k]) S.pricebook[k] = { price: 0, unit: '', comment: '' };
+        S.pricebook[k].price = p;
+        added++;
+      }
+    }
+    pbSave();
+    renderPricesEditor();
+    if (Object.keys(S.pricebook).length) renderPricebook();
+    if (S.calcRows.length) runCalc(true);
+    alert(`Загружено ${added} цен. Они записаны в справочник (наивысший приоритет) и применены в расчёте.`);
+  };
+  r.readAsArrayBuffer(inp.files[0]);
+  inp.value = '';
+}
+
+// ── Calc Table ───────────────────────────────────────────────────────────────
+const expandedRows = new Set();
+
+function toggleExpand(id) {
+  const btn = document.getElementById('btn-' + id);
+  const inner = document.getElementById('detail-' + id);
+  if (!btn || !inner) return;
+  if (expandedRows.has(id)) {
+    expandedRows.delete(id);
+    btn.classList.remove('open');
+    btn.textContent = '▶ детали';
+    inner.classList.remove('open');
+  } else {
+    expandedRows.add(id);
+    btn.classList.add('open');
+    btn.textContent = '▼ детали';
+    inner.classList.add('open');
+  }
+}
+
+function renderCalcTable() {
+  const q = norm(document.getElementById('calc-q').value || '');
+  const f = document.getElementById('calc-filter').value;
+  const rows = S.calcRows.filter(r => {
+    const mq = !q || norm(r.nom).includes(q) || norm(r.char).includes(q);
+    if (f === 'ok') return mq && r.hasSpec && r.full && r.margin >= 0;
+    if (f === 'bad') return mq && r.hasSpec && r.margin < 0;
+    if (f === 'partial') return mq && r.hasSpec && !r.full;
+    if (f === 'nospec') return mq && !r.hasSpec;
+    return mq;
+  });
+
+  const tRev = S.calcRows.reduce((s, r) => s + r.rev, 0);
+  const tCost = S.calcRows.reduce((s, r) => s + r.totalCost, 0);
+  const tM = tRev - tCost;
+  const noSpec = S.calcRows.filter(r => !r.hasSpec).length;
+  const partial = S.calcRows.filter(r => r.hasSpec && !r.full).length;
+  document.getElementById('calc-metrics').innerHTML = `
+    <div class="metric"><div class="metric-label">Выручка</div><div class="metric-value">${fmtM(tRev)}</div><div class="metric-sub">${S.calcRows.length} позиций</div></div>
+    <div class="metric"><div class="metric-label">Себестоимость</div><div class="metric-value">${fmtM(tCost)}</div></div>
+    <div class="metric"><div class="metric-label">Маржа</div><div class="metric-value ${tM >= 0 ? 'green' : 'red'}">${fmtM(tM)}</div><div class="metric-sub">${tRev ? ((tM / tRev) * 100).toFixed(1) : 0}%</div></div>
+    <div class="metric"><div class="metric-label">Нет спец / Неполных</div><div class="metric-value amber">${noSpec} / ${partial}</div></div>`;
+
+  document.getElementById('calc-empty').style.display = 'none';
+  document.getElementById('calc-content').style.display = 'block';
+
+  const tb = document.getElementById('calc-tbody');
+  tb.innerHTML = rows.map((r, idx) => {
+    const id = 'row' + idx;
+    const cls = !r.hasSpec ? 'row-warn' : (!r.full ? 'row-warn' : (r.margin < 0 ? 'row-bad' : 'row-ok'));
+    const badge = !r.hasSpec
+      ? '<span class="badge badge-gray">нет спец.</span>'
+      : (!r.full ? `<span class="badge badge-amber" title="${r.missing.slice(0,5).join(', ')}">неполный·${r.missing.length}</span>`
+      : '<span class="badge badge-green">✓</span>');
+    const wasOpen = expandedRows.has(id);
+    const detailHtml = r.hasSpec && r.tree && r.tree.length
+      ? `<tr class="detail-row"><td colspan="9"><div class="detail-inner${wasOpen ? ' open' : ''}" id="detail-${id}">
+          <table>
+            <thead><tr>
+              <th style="padding-left:16px">Компонент</th>
+              <th class="r">Ед.</th><th class="r">Кол-во</th>
+              <th class="r">Цена/ед, ₽</th><th class="r">Сумма, ₽</th>
+              <th class="r">Доля, %</th><th>Источник</th>
+            </tr></thead>
+            <tbody>${renderTreeRows(r.tree, r.cost)}</tbody>
+          </table>
+        </div></td></tr>`
+      : '';
+    return `<tr class="${cls}">
+      <td>${r.nom}</td>
+      <td style="color:var(--text2);font-size:12px">${r.char || '—'}</td>
+      <td class="r">${r.qty}</td>
+      <td class="r">${fmt(r.rev)}</td>
+      <td class="r">${r.hasSpec ? fmt(r.cost) : '—'}</td>
+      <td class="r">${r.hasSpec ? fmt(r.totalCost) : '—'}</td>
+      <td class="r" style="color:${r.hasSpec?(r.margin>=0?'var(--green)':'var(--red)'):'var(--text3)'}">${r.hasSpec?fmt(r.margin):'—'}</td>
+      <td class="r" style="color:${r.hasSpec?(r.mp>=0?'var(--green)':'var(--red)'):'var(--text3)'}">${r.hasSpec?r.mp.toFixed(1)+'%':'—'}</td>
+      <td style="white-space:nowrap">${badge}${r.hasSpec&&r.tree&&r.tree.length
+        ? ` <button class="expand-btn${wasOpen?' open':''}" id="btn-${id}" onclick="toggleExpand('${id}')">${wasOpen?'▼ детали':'▶ детали'}</button>`
+        : ''}</td>
+    </tr>${detailHtml}`;
+  }).join('') || '<tr><td colspan="9" style="text-align:center;padding:2rem;color:var(--text3)">Нет данных</td></tr>';
+
+  // Строка ИТОГО по отфильтрованным позициям
+  if (rows.length) {
+    const sumQty = rows.reduce((s, r) => s + r.qty, 0);
+    const sumRev = rows.reduce((s, r) => s + r.rev, 0);
+    const sumCost = rows.reduce((s, r) => s + r.totalCost, 0);
+    const sumMargin = sumRev - sumCost;
+    const sumMp = sumRev > 0 ? sumMargin / sumRev * 100 : 0;
+    tb.innerHTML += `<tr style="background:var(--bg3);font-weight:500;border-top:2px solid var(--accent)">
+      <td style="font-weight:600">ИТОГО${rows.length < S.calcRows.length ? ' (по фильтру)' : ''}</td>
+      <td style="color:var(--text2);font-size:11px">${rows.length} поз.</td>
+      <td class="r" style="font-weight:600">${fmt(sumQty)}</td>
+      <td class="r" style="font-weight:600">${fmt(sumRev)}</td>
+      <td class="r">—</td>
+      <td class="r" style="font-weight:600">${fmt(sumCost)}</td>
+      <td class="r" style="font-weight:600;color:${sumMargin>=0?'var(--green)':'var(--red)'}">${fmt(sumMargin)}</td>
+      <td class="r" style="font-weight:600;color:${sumMp>=0?'var(--green)':'var(--red)'}">${sumMp.toFixed(1)}%</td>
+      <td></td>
+    </tr>`;
+  }
+}
+
+// ── Drill ────────────────────────────────────────────────────────────────────
+function renderDrillSelect() {
+  const sel = document.getElementById('drill-select');
+  sel.innerHTML = '<option value="">— выберите модель для детализации —</option>' +
+    S.calcRows.filter(r => r.hasSpec).map(r => `<option value="${esc(r.nom)}|||${esc(r.char || '')}">${r.nom}${r.char ? ' (' + r.char + ')' : ''}</option>`).join('');
+}
+
+function openDrill(nom, char) {
+  document.getElementById('drill-select').value = nom + '|||' + char;
+  renderDrill();
+  switchTab('drill');
+}
+
+function renderDrill() {
+  const val = document.getElementById('drill-select').value;
+  const el = document.getElementById('drill-content');
+  if (!val) { el.innerHTML = '<div class="empty"><span class="empty-icon">⊞</span>Выберите модель</div>'; return; }
+  const [nom, char] = val.split('|||');
+  const row = S.calcRows.find(r => r.nom === nom && (r.char || '') === (char || ''));
+  if (!row || !row.tree) { el.innerHTML = '<div class="empty">Нет данных</div>'; return; }
+
+  el.innerHTML = `<div class="card">
+    <div class="drill-head">
+      <div>
+        <div style="font-size:16px;font-weight:500">${nom}</div>
+        ${char ? `<div style="color:var(--text2);font-size:13px">${char}</div>` : ''}
+      </div>
+      <div style="text-align:right">
+        <div style="font-size:11px;color:var(--text2);text-transform:uppercase;letter-spacing:.05em;margin-bottom:.25rem">Себестоимость / ед.</div>
+        <div style="font-size:24px;font-weight:300;font-family:var(--mono)">${fmt(row.cost)} ₽</div>
+      </div>
+    </div>
+    <div class="table-wrap" style="border:none">
+      <table>
+        <thead><tr><th>Компонент</th><th class="r">Ед.</th><th class="r">Кол-во</th><th class="r">Цена/ед</th><th class="r">Сумма, ₽</th><th class="r">Доля, %</th><th>Источник</th></tr></thead>
+        <tbody>${renderTreeRows(row.tree, row.cost)}</tbody>
+      </table>
+    </div>
+  </div>`;
+}
+
+function renderTreeRows(nodes, total, depth) {
+  depth = depth || 0;
+  return (nodes || []).map(n => {
+    const ind = depth * 18;
+    const isSemi = n.children && n.children.length;
+    const icon = isSemi ? '\u25B8' : (n.hasPrice ? '\u25CF' : '\u25CB');
+    const iconColor = isSemi ? '#7eb3ff' : (n.hasPrice ? 'var(--green)' : 'var(--red)');
+    const pct = total > 0 ? (n.cost / total * 100) : 0;
+    const unitCost = n.qty > 0 ? n.cost / n.qty : 0;
+    const srcLabel = { purchase: '<span class="price-source src-purchase">закупки</span>', stock: '<span class="price-source src-stock">остатки</span>', manual: '<span class="price-source src-manual">вручную</span>', pricebook: '<span class="price-source src-manual">справочник \u2605</span>' };
+    // Полуфабрикат — выделяем чуть ярче, сырьё — приглушённо серым
+    const nameColor = isSemi ? '#c0c8dc' : '#9aa3b8';
+    const nameWeight = isSemi ? '500' : '400';
+    let html = `<tr class="tree-row" style="${isSemi ? 'background:rgba(79,142,247,.05)' : ''}${!isSemi ? ';cursor:pointer' : ''}" ${!isSemi ? `onclick="jumpToPricebook('${esc(n.name)}')" title="Нажмите чтобы задать/изменить цену в справочнике"` : ''}>
+      <td style="padding-left:${10 + ind}px;color:${nameColor};font-weight:${nameWeight}">
+        <span style="color:${iconColor};margin-right:6px;font-size:9px">${icon}</span>
+        ${n.name}
+        ${n.leaf && !n.hasPrice ? '<span class="badge badge-amber" style="margin-left:4px">нет цены ✎</span>' : ''}
+        ${n.leaf && n.hasPrice ? '<span style="margin-left:4px;color:var(--text3);font-size:10px">✎</span>' : ''}
+        ${isSemi ? '<span class="badge badge-blue" style="margin-left:4px;font-size:9px">п/ф</span>' : ''}
+      </td>
+      <td class="r" style="color:#7a8299">${n.unit || '—'}</td>
+      <td class="r" style="color:#9aa3b8">${n.qty}</td>
+      <td class="r" style="color:#9aa3b8">${unitCost > 0 ? fmt(unitCost) : '—'}</td>
+      <td class="r" style="font-weight:${depth === 0 ? '500' : '400'};color:${n.cost > 0 ? '#c0c8dc' : '#5a6275'}">${n.cost > 0 ? fmt(n.cost) : '—'}</td>
+      <td class="r" style="color:#7a8299">${pct > 0.01 ? pct.toFixed(1) + '%' : '—'}</td>
+      <td>${n.leaf && n.src ? (srcLabel[n.src] || '') : ''}</td>
+    </tr>`;
+    if (n.children && n.children.length) html += renderTreeRows(n.children, total, depth + 1);
+    return html;
+  }).join('');
+}
+
+// ── Report ───────────────────────────────────────────────────────────────────
+function renderReport() {
+  if (!S.calcRows.length) return;
+  document.getElementById('report-empty').style.display = 'none';
+  document.getElementById('report-content').style.display = 'block';
+
+  const rows = S.calcRows;
+  const tRev = rows.reduce((s, r) => s + r.rev, 0);
+  const tCost = rows.reduce((s, r) => s + r.totalCost, 0);
+  const tM = tRev - tCost;
+  const withSpec = rows.filter(r => r.hasSpec);
+
+  document.getElementById('report-metrics').innerHTML = `
+    <div class="metric"><div class="metric-label">Выручка</div><div class="metric-value">${fmtM(tRev)}</div></div>
+    <div class="metric"><div class="metric-label">Себестоимость</div><div class="metric-value">${fmtM(tCost)}</div></div>
+    <div class="metric"><div class="metric-label">Маржа</div><div class="metric-value ${tM >= 0 ? 'green' : 'red'}">${fmtM(tM)}</div><div class="metric-sub">${tRev ? ((tM / tRev) * 100).toFixed(1) : 0}%</div></div>
+    <div class="metric"><div class="metric-label">Позиций с расчётом</div><div class="metric-value">${withSpec.length} <span style="font-size:14px;color:var(--text2)">/ ${rows.length}</span></div></div>`;
+
+  const sorted = [...withSpec].sort((a, b) => a.margin - b.margin);
+  document.getElementById('report-bad').innerHTML = sorted.slice(0, 8).map(r => `<tr>
+    <td>${r.nom}${r.char ? '<br><span style="font-size:11px;color:var(--text2)">' + r.char + '</span>' : ''}</td>
+    <td class="r" style="color:var(--red)">${fmt(r.margin)}</td>
+    <td class="r" style="color:var(--red)">${r.mp.toFixed(1)}%</td>
+  </tr>`).join('') || '<tr><td colspan="3" style="text-align:center;padding:1rem;color:var(--text3)">Нет убыточных</td></tr>';
+
+  document.getElementById('report-good').innerHTML = [...sorted].reverse().slice(0, 8).map(r => `<tr>
+    <td>${r.nom}${r.char ? '<br><span style="font-size:11px;color:var(--text2)">' + r.char + '</span>' : ''}</td>
+    <td class="r" style="color:var(--green)">${fmt(r.margin)}</td>
+    <td class="r" style="color:var(--green)">${r.mp.toFixed(1)}%</td>
+  </tr>`).join('');
+
+  const noSpec = rows.filter(r => !r.hasSpec);
+  if (noSpec.length) {
+    document.getElementById('report-nospec-card').style.display = 'block';
+    document.getElementById('report-nospec').innerHTML = noSpec.map(r => `<span class="badge badge-gray">${r.nom}${r.char ? ' (' + r.char + ')' : ''}</span>`).join('');
+  }
+
+  const allMissing = {};
+  rows.filter(r => r.hasSpec && !r.full).forEach(r => r.missing.forEach(m => {
+    if (!allMissing[m]) allMissing[m] = [];
+    allMissing[m].push(r.nom);
+  }));
+  if (Object.keys(allMissing).length) {
+    document.getElementById('report-noprice-card').style.display = 'block';
+    document.getElementById('report-noprice').innerHTML = Object.entries(allMissing).map(([m, ps]) => `<tr>
+      <td><span class="badge badge-amber">${m}</span></td>
+      <td style="color:var(--text2);font-size:12px">${[...new Set(ps)].slice(0, 6).join(', ')}${ps.length > 6 ? '...' : ''}</td>
+    </tr>`).join('');
+  }
+}
+
+// ── Utils ────────────────────────────────────────────────────────────────────
+function setUploaded(zoneId, statusId, name, info) {
+  document.getElementById(zoneId).classList.add('loaded');
+  document.getElementById(statusId).textContent = info;
+  document.getElementById(statusId).style.display = 'block';
+}
+
+function checkReady() {
+  const any = S.ready.sales || S.ready.prices || S.ready.specs;
+  const all = S.ready.sales && S.ready.prices && S.ready.specs;
+  document.getElementById('upload-metrics').style.display = any ? 'grid' : 'none';
+  document.getElementById('upload-metrics').innerHTML = `
+    <div class="metric"><div class="metric-label">Продажи</div><div class="metric-value ${S.ready.sales ? 'green' : 'amber'}">${S.ready.sales ? S.sales.length : '—'}</div></div>
+    <div class="metric"><div class="metric-label">Цены (закупки)</div><div class="metric-value ${S.ready.prices ? 'green' : 'amber'}">${S.ready.prices ? Object.keys(S.purchasePrices).length : '—'}</div></div>
+    <div class="metric"><div class="metric-label">Спецификации</div><div class="metric-value ${S.ready.specs ? 'green' : 'amber'}">${S.ready.specs ? Object.keys(S.specs).length : '—'}</div></div>
+    <div class="metric"><div class="metric-label">Статус</div><div class="metric-value ${all ? 'green' : 'amber'}" style="font-size:14px">${all ? '✓ Готово' : 'Ждём файлы'}</div></div>`;
+  // btn-calc always visible; btn-recalc appears after first calc
+  document.getElementById('btn-recalc').style.display = (all && S.calcRows.length) ? 'inline-flex' : 'none';
+  document.getElementById('top-status').textContent = all ? 'Все файлы загружены' : (S.ready.specs && S.ready.prices ? 'Загрузите продажи' : '');
+  if (S.ready.specs) renderPricesEditor();
+}
+
+function fmt(n) { return Math.round(n || 0).toLocaleString('ru-RU'); }
+function fmtM(n) {
+  const a = Math.abs(n || 0);
+  if (a >= 1e6) return ((n || 0) / 1e6).toFixed(1) + ' млн';
+  if (a >= 1e3) return Math.round((n || 0) / 1e3) + 'К';
+  return Math.round(n || 0).toLocaleString('ru-RU');
+}
+function esc(s) { return String(s || '').replace(/'/g, "\\'"); }
+
+// ── Pricebook ─────────────────────────────────────────────────────────────
+function jumpToPricebook(matName) {
+  const k = norm(matName);
+  S.allMaterials.add(k);
+  if (!S.pricebook[k]) S.pricebook[k] = { price: 0, unit: '', comment: '' };
+  switchTab('pricebook');
+  document.getElementById('pb-filter').value = 'all';
+  document.getElementById('pb-q').value = matName;
+  renderPricebook();
+  setTimeout(() => {
+    const all = document.querySelectorAll('#pb-tbody input[data-field="price"]');
+    let found = null;
+    all.forEach(inp => { if (inp.dataset.key === k) found = inp; });
+    if (found) {
+      found.focus();
+      found.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      found.style.background = 'rgba(245,158,11,.25)';
+      found.style.border = '1px solid var(--amber)';
+    }
+  }, 200);
+}
+
+function manualSavePricebook() {
+  const ok = lsSave(LS.PRICEBOOK, S.pricebook);
+  const cnt = Object.keys(S.pricebook).filter(k => S.pricebook[k].price > 0).length;
+  if (ok) {
+    alert(`Справочник сохранён в браузере.\nПозиций с ценой: ${cnt}\n\nСовет: для надёжности скачайте xlsx-копию кнопкой «↓ Скачать xlsx».`);
+  } else {
+    alert('⛔ Не удалось сохранить в браузере!\n\nВозможные причины:\n• Режим инкогнито\n• Файл открыт напрямую с диска (file://)\n• Браузер блокирует localStorage\n\nОбязательно скачайте xlsx-копию кнопкой «↓ Скачать xlsx», иначе данные потеряются при закрытии.');
+  }
+}
+
+function renderPricebook() {
+  // Проверка доступности localStorage
+  const warn = document.getElementById('ls-warning');
+  if (warn) warn.style.display = lsAvailable() ? 'none' : 'block';
+
+  const q = norm(document.getElementById('pb-q').value || '');
+  const f = document.getElementById('pb-filter').value;
+
+  // Build list: all known materials + any in pricebook not yet in allMaterials
+  const allKeys = new Set([...S.allMaterials, ...Object.keys(S.pricebook)]);
+  const list = [...allKeys].filter(k => {
+    const mq = !q || k.includes(q);
+    const hasPb = S.pricebook[k] != null;
+    if (f === 'override') return mq && hasPb;
+    if (f === 'empty') return mq && !hasPb;
+    return mq;
+  }).sort((a, b) => {
+    // Entries with pricebook price first
+    const ap = S.pricebook[a] != null, bp = S.pricebook[b] != null;
+    if (ap && !bp) return -1; if (!ap && bp) return 1;
+    return a.localeCompare(b, 'ru');
+  });
+
+  const pbCount = Object.keys(S.pricebook).length;
+  document.getElementById('pb-count-label').textContent =
+    `В справочнике: ${pbCount} · Всего позиций: ${allKeys.size}`;
+
+  const srcLabel = {
+    purchase: '<span class="price-source src-purchase">закупки</span>',
+    stock: '<span class="price-source src-stock">остатки</span>',
+    pricebook: '<span class="price-source src-manual">справочник</span>'
+  };
+
+  const tb = document.getElementById('pb-tbody');
+  tb.innerHTML = list.map(k => {
+    const pb = S.pricebook[k];
+    const pp = S.purchasePrices[k] || 0;
+    const sp = S.stockPrices[k] || 0;
+    const pbPrice = pb ? pb.price : '';
+    const pbUnit  = pb ? pb.unit  : '';
+    const pbNote  = pb ? pb.comment : '';
+    const hasPb   = pb != null;
+    return `<tr style="${hasPb ? 'background:rgba(79,142,247,.04)' : ''}">
+      <td style="font-weight:${hasPb?'500':'400'}">${k}</td>
+      <td class="r" style="color:var(--text2)">
+        <input class="price-edit-input" style="width:60px;text-align:center" placeholder="ед." value="${pbUnit}" data-key="${k}" data-field="unit" onchange="setPbField(this)" onblur="setPbField(this)">
+      </td>
+      <td class="r" style="color:var(--text2)">${pp ? fmt(pp) : '—'}</td>
+      <td class="r" style="color:var(--text2)">${sp ? fmt(sp) : '—'}</td>
+      <td class="r">
+        <input class="price-edit-input" style="width:110px;font-weight:${hasPb?'500':'400'};color:${hasPb?'var(--accent)':'var(--text2)'}" type="number" step="0.01" min="0"
+          value="${pbPrice}" placeholder="введите цену"
+          data-key="${k}" data-field="price"
+          onchange="setPbField(this)" onblur="setPbField(this)">
+      </td>
+      <td>
+        <input class="price-edit-input" style="width:160px;color:var(--text2)" placeholder="заметка (опц.)"
+          value="${pbNote}" data-key="${k}" data-field="comment"
+          onchange="setPbField(this)" onblur="setPbField(this)">
+      </td>
+    </tr>`;
+  }).join('') || '<tr><td colspan="6" style="text-align:center;padding:2rem;color:var(--text3)">Нет позиций</td></tr>';
+}
+
+function setPbField(inp) {
+  const k = inp.dataset.key;
+  const field = inp.dataset.field;
+  const val = inp.value.trim();
+
+  if (!S.pricebook[k]) S.pricebook[k] = { price: 0, unit: '', comment: '' };
+
+  if (field === 'price') {
+    const v = parseFloat(val);
+    if (!isNaN(v) && v > 0) {
+      S.pricebook[k].price = v;
+      inp.style.color = 'var(--accent)';
+      inp.style.fontWeight = '500';
+    } else {
+      // Remove entry only if no unit/comment either
+      delete S.pricebook[k];
+      inp.style.color = 'var(--text2)';
+      inp.style.fontWeight = '400';
+    }
+  } else {
+    S.pricebook[k][field] = val;
+    // Clean up empty entries
+    if (!S.pricebook[k].price && !S.pricebook[k].unit && !S.pricebook[k].comment) {
+      delete S.pricebook[k];
+    }
+  }
+  pbSave();
+  updatePbBadge();
+  // Автопересчёт если расчёт уже был выполнен
+  if (field === 'price' && S.calcRows.length) {
+    clearTimeout(window._recalcTimer);
+    window._recalcTimer = setTimeout(() => runCalc(true), 400);
+  }
+}
+
+function clearPricebook() {
+  if (!confirm('Очистить весь справочник цен? Это действие нельзя отменить.')) return;
+  S.pricebook = {};
+  pbSave();
+  renderPricebook();
+}
+
+function exportPricebook() {
+  const wb = XLSX.utils.book_new();
+  const hdr = ['Номенклатура', 'Ед. изм.', 'Цена (справочник)', 'Комментарий'];
+  const rows = Object.entries(S.pricebook).map(([k, v]) => [k, v.unit || '', v.price || '', v.comment || '']);
+  const ws = XLSX.utils.aoa_to_sheet([hdr, ...rows]);
+  ws['!cols'] = [{wch:45},{wch:10},{wch:18},{wch:30}];
+  XLSX.utils.book_append_sheet(wb, ws, 'Справочник цен');
+  XLSX.writeFile(wb, 'spravochnik_tsen.xlsx');
+}
+
+function importPricebook(inp) {
+  if (!inp.files[0]) return;
+  const r = new FileReader();
+  r.onload = e => {
+    const wb = XLSX.read(e.target.result, {type:'array'});
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    const rows = XLSX.utils.sheet_to_json(ws, {header:1});
+    let hdr = -1;
+    for (let i = 0; i < Math.min(rows.length, 5); i++) {
+      if (rows[i] && rows[i].some(c => String(c||'').includes('Номенклатур'))) { hdr = i; break; }
+    }
+    if (hdr < 0) hdr = 0;
+    const ci = { nom:-1, price:-1, unit:-1, comment:-1 };
+    (rows[hdr]||[]).forEach((c,i) => {
+      const s = norm(c);
+      if (s.includes('номенклат')) ci.nom = i;
+      else if (s.includes('цена') || s.includes('стоим')) ci.price = i;
+      else if (s.includes('ед')) ci.unit = i;
+      else if (s.includes('коммент') || s.includes('заметк')) ci.comment = i;
+    });
+    let added = 0;
+    for (let i = hdr+1; i < rows.length; i++) {
+      const row = rows[i]; if (!row || !row[ci.nom]) continue;
+      const k = norm(row[ci.nom]);
+      const p = parseFloat(String(row[ci.price]||'0').replace(',','.')) || 0;
+      if (!k) continue;
+      S.pricebook[k] = {
+        price: p,
+        unit: String(row[ci.unit]||'').trim(),
+        comment: String(row[ci.comment]||'').trim()
+      };
+      added++;
+    }
+    pbSave();
+    renderPricebook();
+    alert(`Загружено ${added} позиций в справочник`);
+  };
+  r.readAsArrayBuffer(inp.files[0]);
+  inp.value = '';
+}
+
+// ── Print ────────────────────────────────────────────────────────────────
+function printCurrent() {
+  // Открываем модальное окно с настройками печати
+  const modal = document.getElementById('print-modal');
+  if (modal) modal.style.display = 'flex';
+}
+
+function closePrintModal() {
+  document.getElementById('print-modal').style.display = 'none';
+}
+
+function doPrint() {
+  closePrintModal();
+
+  const showCalc    = document.getElementById('pr-calc').checked;
+  const showTotals  = document.getElementById('pr-totals').checked;
+  const showDetails = document.getElementById('pr-details').checked;
+  const showReport  = document.getElementById('pr-report').checked;
+  const showNoprice = document.getElementById('pr-noprice').checked;
+  const filterVal   = document.getElementById('pr-filter').value;
+  const orient      = document.getElementById('pr-orient').value;
+  const titleText   = document.getElementById('pr-title').value || 'Расчёт себестоимости';
+
+  // Применяем фильтр если нужно
+  const prevFilter = document.getElementById('calc-filter').value;
+  document.getElementById('calc-filter').value = filterVal;
+  renderCalcTable();
+
+  // Раскрываем детали если нужно
+  if (showDetails) {
+    document.querySelectorAll('.detail-inner').forEach(el => el.classList.add('open'));
+  }
+
+  // Скрываем/показываем нужные блоки
+  const metrics = document.getElementById('calc-metrics');
+  if (metrics) metrics.style.display = showTotals ? 'grid' : 'none';
+
+  // Формируем print-секцию
+  document.querySelectorAll('.section').forEach(s => s.classList.remove('print-target'));
+
+  // Показываем нужные секции
+  if (showCalc || showTotals || showDetails) {
+    document.getElementById('tab-calc').classList.add('print-target');
+  }
+  if (showReport) {
+    renderReport();
+    document.getElementById('tab-report').classList.add('print-target');
+  }
+
+  // Добавляем шапку
+  const sections = document.querySelectorAll('.section.print-target');
+  sections.forEach(sec => {
+    let header = sec.querySelector('.print-header');
+    if (!header) { header = document.createElement('div'); header.className = 'print-header'; sec.prepend(header); }
+    header.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #000;padding-bottom:.5rem;margin-bottom:1rem">
+      <div>
+        <div style="font-size:18px;font-weight:700">${titleText}</div>
+        <div style="font-size:11px;color:#555">Дата: ${new Date().toLocaleString('ru-RU')}</div>
+      </div>
+      <div style="text-align:right;font-size:11px;color:#555">cost.calc · Калькулятор себестоимости мебели</div>
+    </div>`;
+  });
+
+  // Добавляем список без цен если нужно
+  let noPriceBlock = null;
+  if (showNoprice && S.calcRows.length) {
+    const allMissing = {};
+    S.calcRows.filter(r => r.hasSpec && !r.full).forEach(r =>
+      r.missing.forEach(m => { if (!allMissing[m]) allMissing[m] = []; allMissing[m].push(r.nom); })
+    );
+    if (Object.keys(allMissing).length) {
+      noPriceBlock = document.createElement('div');
+      noPriceBlock.id = 'print-noprice-block';
+      noPriceBlock.className = 'section print-target';
+      noPriceBlock.style.cssText = 'display:block;padding:1rem 0';
+      noPriceBlock.innerHTML = '<h3 style="margin-bottom:.75rem;font-size:14px">Материалы без цены</h3><table style="width:100%;font-size:11px;border-collapse:collapse"><thead><tr><th style="text-align:left;padding:4px 8px;background:#eee;border:1px solid #ccc">Номенклатура</th><th style="text-align:left;padding:4px 8px;background:#eee;border:1px solid #ccc">Встречается в изделиях</th></tr></thead><tbody>'
+        + Object.entries(allMissing).map(([m, ps]) => `<tr><td style="padding:3px 8px;border:1px solid #ddd">${m}</td><td style="padding:3px 8px;border:1px solid #ddd;color:#555">${[...new Set(ps)].join(', ')}</td></tr>`).join('')
+        + '</tbody></table>';
+      document.body.appendChild(noPriceBlock);
+    }
+  }
+
+  // Ориентация страницы
+  let styleEl = document.getElementById('print-orient-style');
+  if (!styleEl) { styleEl = document.createElement('style'); styleEl.id = 'print-orient-style'; document.head.appendChild(styleEl); }
+  styleEl.textContent = `@media print { @page { size: A4 ${orient}; margin: 1.2cm; } }`;
+
+  // ПЕЧАТАЕМ
+  setTimeout(() => {
+    window.print();
+    // Восстанавливаем после печати
+    setTimeout(() => {
+      document.querySelectorAll('.section').forEach(s => s.classList.remove('print-target'));
+      document.querySelectorAll('.print-header').forEach(h => h.remove());
+      document.querySelectorAll('.detail-inner').forEach(el => el.classList.remove('open'));
+      if (metrics) metrics.style.display = 'grid';
+      document.getElementById('calc-filter').value = prevFilter;
+      renderCalcTable();
+      if (noPriceBlock) noPriceBlock.remove();
+    }, 800);
+  }, 300);
+}
+
+function exportCSV() {
+  if (!S.calcRows.length) { alert('Сначала выполните расчёт'); return; }
+
+  const wb = XLSX.utils.book_new();
+
+  // ── Лист 1: Сводный расчёт ──────────────────────────────────────────────
+  const hdr1 = ['Номенклатура','Характеристика','Кол-во','Выручка, ₽','Себест/ед, ₽','Себест итого, ₽','Маржа, ₽','Маржа, %','Статус'];
+  const data1 = S.calcRows.map(r => [
+    r.nom, r.char || '', r.qty,
+    Math.round(r.rev), Math.round(r.cost), Math.round(r.totalCost),
+    Math.round(r.margin),
+    parseFloat(r.mp.toFixed(1)),
+    !r.hasSpec ? 'нет спецификации' : (!r.full ? 'неполный расчёт' : 'полный')
+  ]);
+  const ws1 = XLSX.utils.aoa_to_sheet([hdr1, ...data1]);
+
+  // ширина колонок
+  ws1['!cols'] = [
+    {wch:35},{wch:25},{wch:8},{wch:14},{wch:14},{wch:16},{wch:14},{wch:10},{wch:18}
+  ];
+
+  // стиль заголовка
+  hdr1.forEach((_, i) => {
+    const cell = XLSX.utils.encode_cell({r:0, c:i});
+    if (!ws1[cell]) return;
+    ws1[cell].s = { font:{bold:true}, fill:{fgColor:{rgb:'1E2535'}}, alignment:{horizontal:'center'} };
+  });
+
+  // числовые форматы
+  const numFmt = '#,##0';
+  const pctFmt = '0.0"%"';
+  data1.forEach((_, ri) => {
+    [3,4,5,6].forEach(ci => {
+      const cell = XLSX.utils.encode_cell({r:ri+1, c:ci});
+      if (ws1[cell]) ws1[cell].z = numFmt;
+    });
+    const pctCell = XLSX.utils.encode_cell({r:ri+1, c:7});
+    if (ws1[pctCell]) ws1[pctCell].z = pctFmt;
+  });
+
+  XLSX.utils.book_append_sheet(wb, ws1, 'Расчёт себестоимости');
+
+  // ── Лист 2: Сырьё без цены ──────────────────────────────────────────────
+  const allMissing = {};
+  S.calcRows.filter(r => r.hasSpec && !r.full).forEach(r =>
+    r.missing.forEach(m => {
+      if (!allMissing[m]) allMissing[m] = new Set();
+      allMissing[m].add(r.nom);
+    })
+  );
+  if (Object.keys(allMissing).length) {
+    const hdr2 = ['Номенклатура сырья','Встречается в изделиях','Кол-во изделий'];
+    const data2 = Object.entries(allMissing).map(([m, prods]) => [
+      m, [...prods].join(', '), prods.size
+    ]);
+    const ws2 = XLSX.utils.aoa_to_sheet([hdr2, ...data2]);
+    ws2['!cols'] = [{wch:40},{wch:60},{wch:16}];
+    hdr2.forEach((_, i) => {
+      const cell = XLSX.utils.encode_cell({r:0, c:i});
+      if (ws2[cell]) ws2[cell].s = { font:{bold:true} };
+    });
+    XLSX.utils.book_append_sheet(wb, ws2, 'Нет цены на сырьё');
+  }
+
+  // ── Лист 3: Цены сырья ─────────────────────────────────────────────────
+  if (S.allMaterials.size) {
+    const hdr3 = ['Номенклатура','Цена (закупки)','Цена (остатки)','Цена (ручная)','Итоговая цена','Источник'];
+    const srcRu = {purchase:'закупки', stock:'остатки', manual:'вручную', none:'нет цены'};
+    const data3 = [...S.allMaterials].map(k => {
+      const {price, src} = getPrice(k);
+      return [
+        k,
+        S.purchasePrices[k] || '',
+        S.stockPrices[k] || '',
+        S.manualPrices[k] != null ? S.manualPrices[k] : '',
+        price || '',
+        srcRu[src] || ''
+      ];
+    });
+    const ws3 = XLSX.utils.aoa_to_sheet([hdr3, ...data3]);
+    ws3['!cols'] = [{wch:40},{wch:14},{wch:14},{wch:14},{wch:14},{wch:12}];
+    hdr3.forEach((_, i) => {
+      const cell = XLSX.utils.encode_cell({r:0, c:i});
+      if (ws3[cell]) ws3[cell].s = { font:{bold:true} };
+    });
+    XLSX.utils.book_append_sheet(wb, ws3, 'Цены сырья');
+  }
+
+  // ── Сохранить ───────────────────────────────────────────────────────────
+  const date = new Date().toLocaleDateString('ru-RU').replace(/\./g,'-');
+  XLSX.writeFile(wb, `sebestoimost_${date}.xlsx`);
+}
+</script>
+</body>
+</html>
