@@ -444,14 +444,22 @@ select:focus{outline:none;border-color:var(--accent)}
         <div class="table-wrap">
           <table>
             <thead><tr>
-              <th style="min-width:300px">Номенклатура</th>
-              <th class="r" style="min-width:80px">Ед.</th>
-              <th class="r">Цена (закупки)</th>
-              <th class="r">Цена (остатки)</th>
-              <th class="r" style="min-width:140px">Цена в справочнике ↑</th>
-              <th style="min-width:120px">Комментарий</th>
+              <th style="min-width:260px">Номенклатура</th>
+              <th class="r" style="min-width:70px">Ед.</th>
+              <th class="r">Закупки</th>
+              <th class="r">Остатки</th>
+              <th class="r" style="min-width:130px">Цена ↑</th>
+              <th style="min-width:200px">Аналог (синоним в 1С)</th>
+              <th style="min-width:110px">Комментарий</th>
             </tr></thead>
             <tbody id="pb-tbody"></tbody>
+            <tfoot>
+              <tr>
+                <td colspan="7" style="padding:.5rem">
+                  <button class="btn btn-sm" onclick="addPricebookItem()" style="width:100%;justify-content:center">+ Добавить новую номенклатуру вручную</button>
+                </td>
+              </tr>
+            </tfoot>
           </table>
         </div>
       </div>
@@ -517,7 +525,8 @@ const S = {
   purchasePrices: {},   // nom_lower -> price
   stockPrices: {},      // nom_lower -> price
   manualPrices: {},     // nom_lower -> price (user entered, session only)
-  pricebook: {},        // nom_lower -> {price, unit, comment} — persisted in localStorage
+  pricebook: {},        // nom_lower -> {price, unit, comment, alias} — persisted in localStorage
+  // alias: если задан, цена берётся от алиаса (синонима)
   specs: {},
   allMaterials: new Set(),
   calcRows: [],
@@ -662,9 +671,26 @@ if (specsRestored || pricesRestored) {
 // effective price: pricebook > manual > stock > purchase
 function getPrice(nom) {
   const k = norm(nom);
+  // Если задан алиас — берём цену от него (рекурсивно, не более 3 уровней)
+  function resolveAlias(key, depth) {
+    if (depth > 3) return key;
+    const pb = S.pricebook[key];
+    if (pb && pb.alias) {
+      const ak = norm(pb.alias);
+      if (ak && ak !== key) return resolveAlias(ak, depth + 1);
+    }
+    return key;
+  }
+  const rk = resolveAlias(k, 0); // resolved key (может быть другим если есть алиас)
+  const wasAliased = rk !== k;
+
   // Справочник только если цена > 0
+  if (S.pricebook[rk] != null && S.pricebook[rk].price > 0) return { price: S.pricebook[rk].price, src: wasAliased ? 'alias' : 'pricebook', alias: wasAliased ? S.pricebook[k]?.alias : null };
   if (S.pricebook[k] != null && S.pricebook[k].price > 0) return { price: S.pricebook[k].price, src: 'pricebook' };
-  if (S.manualPrices[k] != null && S.manualPrices[k] > 0) return { price: S.manualPrices[k], src: 'manual' };
+  if (S.manualPrices[rk] != null && S.manualPrices[rk] > 0) return { price: S.manualPrices[rk], src: wasAliased ? 'alias' : 'manual' };
+  if (S.stockPrices[rk] != null && S.stockPrices[rk] > 0) return { price: S.stockPrices[rk], src: wasAliased ? 'alias' : 'stock' };
+  if (S.purchasePrices[rk] != null && S.purchasePrices[rk] > 0) return { price: S.purchasePrices[rk], src: wasAliased ? 'alias' : 'purchase' };
+  // Fallback к оригинальному ключу
   if (S.stockPrices[k] != null && S.stockPrices[k] > 0) return { price: S.stockPrices[k], src: 'stock' };
   if (S.purchasePrices[k] != null && S.purchasePrices[k] > 0) return { price: S.purchasePrices[k], src: 'purchase' };
   return { price: 0, src: 'none' };
@@ -975,7 +1001,7 @@ function renderPricesEditor() {
   document.getElementById('badge-missing').style.display = missingCount > 0 ? 'inline-flex' : 'none';
   document.getElementById('alert-missing-prices').style.display = missingCount > 0 ? 'flex' : 'none';
 
-  const srcLabel = { purchase: '<span class="price-source src-purchase">закупки</span>', stock: '<span class="price-source src-stock">остатки</span>', manual: '<span class="price-source src-manual">вручную</span>', none: '<span class="price-source src-none">нет цены</span>' };
+  const srcLabel = { purchase: '<span class="price-source src-purchase">закупки</span>', stock: '<span class="price-source src-stock">остатки</span>', manual: '<span class="price-source src-manual">вручную</span>', pricebook: '<span class="price-source src-manual">справочник</span>', alias: '<span class="price-source src-stock">аналог →</span>', none: '<span class="price-source src-none">нет цены</span>' };
   const tb = document.getElementById('prices-tbody');
   tb.innerHTML = mats.map(k => {
     const pp = S.purchasePrices[k] || 0;
@@ -1241,16 +1267,16 @@ function renderTreeRows(nodes, total, depth) {
     const iconColor = isSemi ? '#7eb3ff' : (n.hasPrice ? 'var(--green)' : 'var(--red)');
     const pct = total > 0 ? (n.cost / total * 100) : 0;
     const unitCost = n.qty > 0 ? n.cost / n.qty : 0;
-    const srcLabel = { purchase: '<span class="price-source src-purchase">закупки</span>', stock: '<span class="price-source src-stock">остатки</span>', manual: '<span class="price-source src-manual">вручную</span>', pricebook: '<span class="price-source src-manual">справочник \u2605</span>' };
+    const srcLabel = { purchase: '<span class="price-source src-purchase">закупки</span>', stock: '<span class="price-source src-stock">остатки</span>', manual: '<span class="price-source src-manual">вручную</span>', pricebook: '<span class="price-source src-manual">справочник ★</span>', alias: '<span class="price-source src-stock">аналог →</span>' };
     // Полуфабрикат — выделяем чуть ярче, сырьё — приглушённо серым
     const nameColor = isSemi ? '#c0c8dc' : '#9aa3b8';
     const nameWeight = isSemi ? '500' : '400';
-    let html = `<tr class="tree-row" style="${isSemi ? 'background:rgba(79,142,247,.05)' : ''}${!isSemi ? ';cursor:pointer' : ''}" ${!isSemi ? `data-mat="${n.name.replace(/"/g,'&quot;')}" onclick="jumpToPricebookByEl(this)" title="Нажмите чтобы задать/изменить цену в справочнике"` : ''}>
+    // Безопасно кодируем имя для передачи в обработчик
+    const safeMatName = JSON.stringify(n.name);
+    let html = `<tr class="tree-row" style="${isSemi ? 'background:rgba(79,142,247,.05)' : ''}">
       <td style="padding-left:${10 + ind}px;color:${nameColor};font-weight:${nameWeight}">
         <span style="color:${iconColor};margin-right:6px;font-size:9px">${icon}</span>
         ${n.name}
-        ${n.leaf && !n.hasPrice ? '<span class="badge badge-amber" style="margin-left:4px">нет цены ✎</span>' : ''}
-        ${n.leaf && n.hasPrice ? '<span style="margin-left:4px;color:var(--text3);font-size:10px">✎</span>' : ''}
         ${isSemi ? '<span class="badge badge-blue" style="margin-left:4px;font-size:9px">п/ф</span>' : ''}
       </td>
       <td class="r" style="color:#7a8299">${n.unit || '—'}</td>
@@ -1258,7 +1284,10 @@ function renderTreeRows(nodes, total, depth) {
       <td class="r" style="color:#9aa3b8">${unitCost > 0 ? fmt(unitCost) : '—'}</td>
       <td class="r" style="font-weight:${depth === 0 ? '500' : '400'};color:${n.cost > 0 ? '#c0c8dc' : '#5a6275'}">${n.cost > 0 ? fmt(n.cost) : '—'}</td>
       <td class="r" style="color:#7a8299">${pct > 0.01 ? pct.toFixed(1) + '%' : '—'}</td>
-      <td>${n.leaf && n.src ? (srcLabel[n.src] || '') : ''}</td>
+      <td>${n.leaf
+        ? `<button class="btn btn-sm btn-ghost" style="font-size:10px;padding:2px 6px;color:${n.hasPrice ? 'var(--text2)' : 'var(--amber)'}" onclick="jumpToPricebook(${safeMatName})">${n.hasPrice ? '✎ цена' : '+ цена'}</button>`
+        : (n.src ? (srcLabel[n.src] || '') : '')
+      }</td>
     </tr>`;
     if (n.children && n.children.length) html += renderTreeRows(n.children, total, depth + 1);
     return html;
@@ -1417,71 +1446,102 @@ function renderPricebook() {
     pricebook: '<span class="price-source src-manual">справочник</span>'
   };
 
+  // Собираем все известные имена для autocomplete
+  const allKnownNames = [...new Set([...S.allMaterials, ...Object.keys(S.purchasePrices), ...Object.keys(S.pricebook)])].sort((a,b)=>a.localeCompare(b,'ru'));
+
   const tb = document.getElementById('pb-tbody');
   tb.innerHTML = list.map(k => {
     const pb = S.pricebook[k];
     const pp = S.purchasePrices[k] || 0;
     const sp = S.stockPrices[k] || 0;
-    const pbPrice = pb ? pb.price : '';
-    const pbUnit  = pb ? pb.unit  : '';
+    const pbPrice = pb ? pb.price   : '';
+    const pbUnit  = pb ? pb.unit    : '';
     const pbNote  = pb ? pb.comment : '';
-    const hasPb   = pb != null;
-    return `<tr style="${hasPb ? 'background:rgba(79,142,247,.04)' : ''}">
-      <td style="font-weight:${hasPb?'500':'400'}">${k}</td>
-      <td class="r" style="color:var(--text2)">
-        <input class="price-edit-input" style="width:60px;text-align:center" placeholder="ед." value="${pbUnit}" data-key="${k}" data-field="unit" onchange="setPbField(this)" onblur="setPbField(this)">
+    const pbAlias = pb ? (pb.alias || '') : '';
+    const hasPb   = pb != null && pb.price > 0;
+    const hasAlias = pbAlias && pbAlias.trim();
+    const { price: resolvedPrice } = getPrice(k);
+    const rowBg = hasAlias ? 'rgba(34,197,94,.05)' : (hasPb ? 'rgba(79,142,247,.04)' : '');
+    const safeK = k.replace(/[^\w]/g,'_').slice(0,20) + Math.random().toString(36).slice(2,6);
+    return `<tr style="${rowBg ? 'background:'+rowBg : ''}">
+      <td style="font-weight:${hasPb||hasAlias?'500':'400'};font-size:12px">
+        ${k}
+        ${hasAlias ? `<br><span style="font-size:10px;color:var(--green)">→ ${pbAlias}</span>` : ''}
       </td>
-      <td class="r" style="color:var(--text2)">${pp ? fmt(pp) : '—'}</td>
-      <td class="r" style="color:var(--text2)">${sp ? fmt(sp) : '—'}</td>
       <td class="r">
-        <input class="price-edit-input" style="width:110px;font-weight:${hasPb?'500':'400'};color:${hasPb?'var(--accent)':'var(--text2)'}" type="number" step="0.01" min="0"
-          value="${pbPrice}" placeholder="введите цену"
+        <input class="price-edit-input" style="width:50px;text-align:center" placeholder="ед." value="${pbUnit}" data-key="${k}" data-field="unit" onchange="setPbField(this)" onblur="setPbField(this)">
+      </td>
+      <td class="r" style="color:var(--text2);font-size:12px">${pp ? fmt(pp) : '—'}</td>
+      <td class="r" style="color:var(--text2);font-size:12px">${sp ? fmt(sp) : '—'}</td>
+      <td class="r">
+        <input class="price-edit-input" style="width:100px;font-weight:${hasPb?'500':'400'};color:${hasPb?'var(--accent)':(hasAlias&&resolvedPrice>0?'var(--green)':'var(--text2)')}" type="number" step="0.01" min="0"
+          value="${pbPrice}" placeholder="${hasAlias && resolvedPrice > 0 ? fmt(resolvedPrice)+' (алиас)' : 'цена'}"
           data-key="${k}" data-field="price"
           onchange="setPbField(this)" onblur="setPbField(this)">
       </td>
       <td>
-        <input class="price-edit-input" style="width:160px;color:var(--text2)" placeholder="заметка (опц.)"
+        <datalist id="dl-${safeK}">${allKnownNames.slice(0,200).map(n=>`<option value="${n.replace(/"/g,'&quot;')}">`).join('')}</datalist>
+        <input class="price-edit-input" style="width:185px;color:${hasAlias?'var(--green)':'var(--text2)'}"
+          placeholder="= синоним (автодополнение)"
+          list="dl-${safeK}"
+          value="${pbAlias}" data-key="${k}" data-field="alias"
+          onchange="setPbField(this)" onblur="setPbField(this)">
+      </td>
+      <td>
+        <input class="price-edit-input" style="width:90px;color:var(--text2)" placeholder="заметка"
           value="${pbNote}" data-key="${k}" data-field="comment"
           onchange="setPbField(this)" onblur="setPbField(this)">
       </td>
     </tr>`;
-  }).join('') || '<tr><td colspan="6" style="text-align:center;padding:2rem;color:var(--text3)">Нет позиций</td></tr>';
+  }).join('') || '<tr><td colspan="7" style="text-align:center;padding:2rem;color:var(--text3)">Нет позиций</td></tr>';
 }
+
 
 function setPbField(inp) {
   const k = inp.dataset.key;
   const field = inp.dataset.field;
   const val = inp.value.trim();
 
-  if (!S.pricebook[k]) S.pricebook[k] = { price: 0, unit: '', comment: '' };
+  if (!S.pricebook[k]) S.pricebook[k] = { price: 0, unit: '', comment: '', alias: '' };
 
   if (field === 'price') {
     const v = parseFloat(val);
-    if (!isNaN(v) && v > 0) {
-      S.pricebook[k].price = v;
-      inp.style.color = 'var(--accent)';
-      inp.style.fontWeight = '500';
-    } else {
-      // Remove entry only if no unit/comment either
-      delete S.pricebook[k];
-      inp.style.color = 'var(--text2)';
-      inp.style.fontWeight = '400';
-    }
+    S.pricebook[k].price = (!isNaN(v) && v > 0) ? v : 0;
   } else {
     S.pricebook[k][field] = val;
-    // Clean up empty entries
-    if (!S.pricebook[k].price && !S.pricebook[k].unit && !S.pricebook[k].comment) {
-      delete S.pricebook[k];
-    }
   }
+
+  // Удаляем пустые записи
+  const pb = S.pricebook[k];
+  if (!pb.price && !pb.alias && !pb.unit && !pb.comment) delete S.pricebook[k];
+
   pbSave();
   updatePbBadge();
-  // Автопересчёт если расчёт уже был выполнен
-  if (field === 'price' && S.calcRows.length) {
+  // Автопересчёт при изменении цены или алиаса
+  if ((field === 'price' || field === 'alias') && S.calcRows.length) {
     clearTimeout(window._recalcTimer);
-    window._recalcTimer = setTimeout(() => runCalc(true), 400);
+    window._recalcTimer = setTimeout(() => { renderPricebook(); runCalc(true); }, 500);
   }
 }
+
+function addPricebookItem() {
+  const name = prompt('Название номенклатуры:');
+  if (!name || !name.trim()) return;
+  const k = norm(name.trim());
+  if (!S.pricebook[k]) S.pricebook[k] = { price: 0, unit: '', comment: '', alias: '' };
+  S.allMaterials.add(k);
+  pbSave();
+  document.getElementById('pb-filter').value = 'all';
+  document.getElementById('pb-q').value = name.trim();
+  renderPricebook();
+  setTimeout(() => {
+    const all = document.querySelectorAll('#pb-tbody input[data-field="price"]');
+    let found = null;
+    all.forEach(inp => { if (inp.dataset.key === k) found = inp; });
+    if (found) { found.focus(); found.scrollIntoView({ block:'center', behavior:'smooth' }); found.style.border = '1px solid var(--accent)'; }
+  }, 150);
+}
+
 
 function clearPricebook() {
   if (!confirm('Очистить весь справочник цен? Это действие нельзя отменить.')) return;
