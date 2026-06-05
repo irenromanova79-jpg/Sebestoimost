@@ -1245,7 +1245,7 @@ function renderTreeRows(nodes, total, depth) {
     // Полуфабрикат — выделяем чуть ярче, сырьё — приглушённо серым
     const nameColor = isSemi ? '#c0c8dc' : '#9aa3b8';
     const nameWeight = isSemi ? '500' : '400';
-    let html = `<tr class="tree-row" style="${isSemi ? 'background:rgba(79,142,247,.05)' : ''}${!isSemi ? ';cursor:pointer' : ''}" ${!isSemi ? `onclick="jumpToPricebook('${esc(n.name)}')" title="Нажмите чтобы задать/изменить цену в справочнике"` : ''}>
+    let html = `<tr class="tree-row" style="${isSemi ? 'background:rgba(79,142,247,.05)' : ''}${!isSemi ? ';cursor:pointer' : ''}" ${!isSemi ? `data-mat="${n.name.replace(/"/g,'&quot;')}" onclick="jumpToPricebookByEl(this)" title="Нажмите чтобы задать/изменить цену в справочнике"` : ''}>
       <td style="padding-left:${10 + ind}px;color:${nameColor};font-weight:${nameWeight}">
         <span style="color:${iconColor};margin-right:6px;font-size:9px">${icon}</span>
         ${n.name}
@@ -1345,9 +1345,14 @@ function fmtM(n) {
   if (a >= 1e3) return Math.round((n || 0) / 1e3) + 'К';
   return Math.round(n || 0).toLocaleString('ru-RU');
 }
-function esc(s) { return String(s || '').replace(/'/g, "\\'"); }
+function esc(s) { return String(s || '').replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'&quot;'); }
 
 // ── Pricebook ─────────────────────────────────────────────────────────────
+function jumpToPricebookByEl(el) {
+  const matName = el.dataset.mat;
+  if (matName) jumpToPricebook(matName);
+}
+
 function jumpToPricebook(matName) {
   const k = norm(matName);
   S.allMaterials.add(k);
