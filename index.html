@@ -508,15 +508,8 @@ select:focus{outline:none;border-color:var(--accent)}
 
     <div style="margin-bottom:1rem">
       <div style="font-size:11px;color:var(--text2);text-transform:uppercase;letter-spacing:.05em;margin-bottom:.5rem">Фильтр строк</div>
-      <div class="modal-row">
-        <label>Показать позиции</label>
-        <select id="pr-filter" style="flex:1">
-          <option value="all">Все</option>
-          <option value="ok">Только прибыльные</option>
-          <option value="bad">Только убыточные</option>
-          <option value="partial">Неполный расчёт</option>
-          <option value="nospec">Без спецификации</option>
-        </select>
+      <div style="padding:.5rem .75rem;background:var(--bg3);border-radius:var(--r);font-size:12px;color:var(--green)">
+        ✓ Печатается то что сейчас на экране — поиск и фильтр уже применены
       </div>
     </div>
 
@@ -1727,28 +1720,32 @@ function doPrint() {
   const showDetails = document.getElementById('pr-details').checked;
   const showReport  = document.getElementById('pr-report').checked;
   const showNoprice = document.getElementById('pr-noprice').checked;
-  const filterVal   = document.getElementById('pr-filter').value;
   const orient      = document.getElementById('pr-orient').value;
   const titleText   = document.getElementById('pr-title').value || 'Расчёт себестоимости';
 
-  // Применяем фильтр если нужно
-  const prevFilter = document.getElementById('calc-filter').value;
-  document.getElementById('calc-filter').value = filterVal;
-  renderCalcTable();
-
-  // Раскрываем детали если нужно
+  // Раскрываем детали только если нужно
+  // НЕ перерендериваем таблицу — печатаем то что уже на экране
   if (showDetails) {
     document.querySelectorAll('.detail-inner').forEach(el => el.classList.add('open'));
+  } else {
+    // Закрываем все детали перед печатью
+    document.querySelectorAll('.detail-inner:not(.open-before-print)').forEach(el => {
+      el.dataset.wasOpen = el.classList.contains('open') ? '1' : '0';
+      el.classList.remove('open');
+    });
   }
 
-  // Скрываем/показываем нужные блоки
+  // Скрываем метрики если не нужны
   const metrics = document.getElementById('calc-metrics');
+  const metricsPrev = metrics ? metrics.style.display : '';
   if (metrics) metrics.style.display = showTotals ? 'grid' : 'none';
 
-  // Формируем print-секцию
-  document.querySelectorAll('.section').forEach(s => s.classList.remove('print-target'));
+  // Скрываем calc-toolbar (поиск, фильтры) при печати — не нужны
+  const toolbar = document.querySelector('#tab-calc .toolbar');
+  if (toolbar) toolbar.style.display = 'none';
 
-  // Показываем нужные секции
+  // Формируем print-target
+  document.querySelectorAll('.section').forEach(s => s.classList.remove('print-target'));
   if (showCalc || showTotals || showDetails) {
     document.getElementById('tab-calc').classList.add('print-target');
   }
@@ -1757,21 +1754,27 @@ function doPrint() {
     document.getElementById('tab-report').classList.add('print-target');
   }
 
-  // Добавляем шапку
-  const sections = document.querySelectorAll('.section.print-target');
-  sections.forEach(sec => {
+  // Шапка с заголовком и фильтром
+  const q = document.getElementById('calc-q')?.value || '';
+  const f = document.getElementById('calc-filter')?.value || 'all';
+  const filterLabel = {all:'Все позиции', ok:'Прибыльные', bad:'Убыточные', partial:'Неполный расчёт', nospec:'Без спецификации'}[f] || f;
+  const rowCount = document.querySelectorAll('#calc-tbody tr:not(.detail-row)').length;
+
+  document.querySelectorAll('.section.print-target').forEach(sec => {
     let header = sec.querySelector('.print-header');
     if (!header) { header = document.createElement('div'); header.className = 'print-header'; sec.prepend(header); }
     header.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #000;padding-bottom:.5rem;margin-bottom:1rem">
       <div>
-        <div style="font-size:18px;font-weight:700">${titleText}</div>
-        <div style="font-size:11px;color:#555">Дата: ${new Date().toLocaleString('ru-RU')}</div>
+        <div style="font-size:16px;font-weight:700">${titleText}</div>
+        <div style="font-size:10px;color:#555;margin-top:2px">
+          Фильтр: ${filterLabel}${q ? ' · Поиск: «'+q+'»' : ''} · Строк: ${rowCount} · Дата: ${new Date().toLocaleString('ru-RU')}
+        </div>
       </div>
-      <div style="text-align:right;font-size:11px;color:#555">cost.calc · Калькулятор себестоимости мебели</div>
+      <div style="text-align:right;font-size:10px;color:#555">cost.calc · Калькулятор себестоимости мебели</div>
     </div>`;
   });
 
-  // Добавляем список без цен если нужно
+  // Блок без цен
   let noPriceBlock = null;
   if (showNoprice && S.calcRows.length) {
     const allMissing = {};
@@ -1780,35 +1783,40 @@ function doPrint() {
     );
     if (Object.keys(allMissing).length) {
       noPriceBlock = document.createElement('div');
-      noPriceBlock.id = 'print-noprice-block';
       noPriceBlock.className = 'section print-target';
       noPriceBlock.style.cssText = 'display:block;padding:1rem 0';
-      noPriceBlock.innerHTML = '<h3 style="margin-bottom:.75rem;font-size:14px">Материалы без цены</h3><table style="width:100%;font-size:11px;border-collapse:collapse"><thead><tr><th style="text-align:left;padding:4px 8px;background:#eee;border:1px solid #ccc">Номенклатура</th><th style="text-align:left;padding:4px 8px;background:#eee;border:1px solid #ccc">Встречается в изделиях</th></tr></thead><tbody>'
-        + Object.entries(allMissing).map(([m, ps]) => `<tr><td style="padding:3px 8px;border:1px solid #ddd">${m}</td><td style="padding:3px 8px;border:1px solid #ddd;color:#555">${[...new Set(ps)].join(', ')}</td></tr>`).join('')
+      noPriceBlock.innerHTML = '<h3 style="margin-bottom:.75rem;font-size:13px;border-top:1px solid #ccc;padding-top:1rem">Материалы без цены</h3>'
+        + '<table style="width:100%;font-size:10px;border-collapse:collapse">'
+        + '<thead><tr><th style="text-align:left;padding:3px 6px;background:#eee;border:1px solid #ccc">Материал</th>'
+        + '<th style="text-align:left;padding:3px 6px;background:#eee;border:1px solid #ccc">Встречается в изделиях</th></tr></thead><tbody>'
+        + Object.entries(allMissing).map(([m,ps])=>`<tr><td style="padding:2px 6px;border:1px solid #ddd">${m}</td><td style="padding:2px 6px;border:1px solid #ddd;color:#555">${[...new Set(ps)].slice(0,6).join(', ')}</td></tr>`).join('')
         + '</tbody></table>';
       document.body.appendChild(noPriceBlock);
     }
   }
 
-  // Ориентация страницы
+  // Ориентация
   let styleEl = document.getElementById('print-orient-style');
   if (!styleEl) { styleEl = document.createElement('style'); styleEl.id = 'print-orient-style'; document.head.appendChild(styleEl); }
-  styleEl.textContent = `@media print { @page { size: A4 ${orient}; margin: 1.2cm; } }`;
+  styleEl.textContent = `@media print { @page { size: A4 ${orient}; margin: 1cm 1.2cm; } }`;
 
-  // ПЕЧАТАЕМ
   setTimeout(() => {
     window.print();
-    // Восстанавливаем после печати
     setTimeout(() => {
+      // Восстанавливаем всё
       document.querySelectorAll('.section').forEach(s => s.classList.remove('print-target'));
       document.querySelectorAll('.print-header').forEach(h => h.remove());
-      document.querySelectorAll('.detail-inner').forEach(el => el.classList.remove('open'));
-      if (metrics) metrics.style.display = 'grid';
-      document.getElementById('calc-filter').value = prevFilter;
-      renderCalcTable();
+      if (!showDetails) {
+        document.querySelectorAll('.detail-inner').forEach(el => {
+          if (el.dataset.wasOpen !== '1') el.classList.remove('open');
+          delete el.dataset.wasOpen;
+        });
+      }
+      if (metrics) metrics.style.display = metricsPrev || 'grid';
+      if (toolbar) toolbar.style.display = '';
       if (noPriceBlock) noPriceBlock.remove();
     }, 800);
-  }, 300);
+  }, 200);
 }
 
 function exportCSV() {
