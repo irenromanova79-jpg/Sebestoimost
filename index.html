@@ -466,6 +466,32 @@ select:focus{outline:none;border-color:var(--accent)}
     </div>
 
   </main>
+<!-- Inline material edit popup -->
+<div id="mat-popup" style="display:none;position:fixed;z-index:2000;background:var(--bg2);border:1px solid var(--border);border-radius:var(--r2);padding:1rem;width:340px;box-shadow:0 8px 32px rgba(0,0,0,.5)">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem">
+    <div style="font-size:12px;font-weight:500;color:var(--text2)" id="mat-popup-title">Материал</div>
+    <button onclick="closeMatPopup()" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:16px">×</button>
+  </div>
+  <div style="font-size:13px;font-weight:500;margin-bottom:1rem;color:var(--text)" id="mat-popup-name" style="word-break:break-word"></div>
+
+  <div style="margin-bottom:.75rem">
+    <label style="font-size:11px;color:var(--text2);display:block;margin-bottom:.3rem">Цена за единицу, ₽</label>
+    <input type="number" class="inp" id="mat-popup-price" placeholder="введите цену" step="0.01" min="0" style="width:100%">
+  </div>
+
+  <div style="margin-bottom:1rem">
+    <label style="font-size:11px;color:var(--text2);display:block;margin-bottom:.3rem">Аналог — взять цену от другого материала</label>
+    <input type="text" class="inp" id="mat-popup-alias" list="mat-popup-datalist" placeholder="начните вводить название..." style="width:100%">
+    <datalist id="mat-popup-datalist"></datalist>
+    <div style="font-size:10px;color:var(--text3);margin-top:.25rem">Если задан аналог — цена берётся от него. Своя цена имеет приоритет.</div>
+  </div>
+
+  <div style="display:flex;gap:.5rem">
+    <button class="btn btn-primary" style="flex:1" onclick="saveMatPopup()">✓ Применить</button>
+    <button class="btn" onclick="closeMatPopup()">Отмена</button>
+  </div>
+</div>
+
 <!-- Print Modal -->
 <div id="print-modal" class="modal-overlay" style="display:none" onclick="if(event.target===this)closePrintModal()">
   <div class="modal">
@@ -1285,7 +1311,7 @@ function renderTreeRows(nodes, total, depth) {
       <td class="r" style="font-weight:${depth === 0 ? '500' : '400'};color:${n.cost > 0 ? '#c0c8dc' : '#5a6275'}">${n.cost > 0 ? fmt(n.cost) : '—'}</td>
       <td class="r" style="color:#7a8299">${pct > 0.01 ? pct.toFixed(1) + '%' : '—'}</td>
       <td>${n.leaf
-        ? `<button class="btn btn-sm btn-ghost" style="font-size:10px;padding:2px 6px;color:${n.hasPrice ? 'var(--text2)' : 'var(--amber)'}" onclick="jumpToPricebook(${safeMatName})">${n.hasPrice ? '✎ цена' : '+ цена'}</button>`
+        ? `<button class="btn btn-sm btn-ghost" style="font-size:10px;padding:2px 6px;color:${n.hasPrice ? 'var(--text2)' : 'var(--amber)'}" onclick="event.stopPropagation();openMatPopup(${safeMatName},this)">${n.hasPrice ? '✎ цена' : '+ цена'}</button>`
         : (n.src ? (srcLabel[n.src] || '') : '')
       }</td>
     </tr>`;
@@ -1599,6 +1625,87 @@ function importPricebook(inp) {
   };
   r.readAsArrayBuffer(inp.files[0]);
   inp.value = '';
+}
+
+// ── Material inline popup ────────────────────────────────────────────────
+let _popupMatKey = null;
+
+function openMatPopup(matName, btnEl) {
+  const k = norm(matName);
+  _popupMatKey = k;
+  S.allMaterials.add(k);
+  if (!S.pricebook[k]) S.pricebook[k] = { price: 0, unit: '', comment: '', alias: '' };
+  const pb = S.pricebook[k];
+
+  // Fill popup
+  document.getElementById('mat-popup-title').textContent = 'Задать цену / аналог';
+  document.getElementById('mat-popup-name').textContent = matName;
+  document.getElementById('mat-popup-price').value = pb.price > 0 ? pb.price : '';
+  document.getElementById('mat-popup-alias').value = pb.alias || '';
+
+  // Fill datalist with all known materials
+  const dl = document.getElementById('mat-popup-datalist');
+  const allKnown = [...new Set([...S.allMaterials, ...Object.keys(S.purchasePrices), ...Object.keys(S.stockPrices)])].sort((a,b)=>a.localeCompare(b,'ru'));
+  dl.innerHTML = allKnown.map(n => `<option value="${n.replace(/"/g,'&quot;')}">`).join('');
+
+  // Position popup near button
+  const popup = document.getElementById('mat-popup');
+  popup.style.display = 'block';
+  const rect = btnEl.getBoundingClientRect();
+  const popW = 340, popH = 260;
+  let top = rect.bottom + 8;
+  let left = rect.left;
+  if (left + popW > window.innerWidth - 8) left = window.innerWidth - popW - 8;
+  if (top + popH > window.innerHeight - 8) top = rect.top - popH - 8;
+  popup.style.top = Math.max(8, top) + 'px';
+  popup.style.left = Math.max(8, left) + 'px';
+
+  // Focus price if no price, alias if price exists
+  setTimeout(() => {
+    const priceInp = document.getElementById('mat-popup-price');
+    const aliasInp = document.getElementById('mat-popup-alias');
+    if (pb.price > 0) aliasInp.focus(); else priceInp.focus();
+  }, 50);
+
+  // Close on outside click
+  setTimeout(() => { document.addEventListener('click', _popupOutsideClick); }, 100);
+}
+
+function _popupOutsideClick(e) {
+  const popup = document.getElementById('mat-popup');
+  if (!popup.contains(e.target)) {
+    closeMatPopup();
+  }
+}
+
+function closeMatPopup() {
+  document.getElementById('mat-popup').style.display = 'none';
+  document.removeEventListener('click', _popupOutsideClick);
+  _popupMatKey = null;
+}
+
+function saveMatPopup() {
+  if (!_popupMatKey) return;
+  const k = _popupMatKey;
+  const price = parseFloat(document.getElementById('mat-popup-price').value) || 0;
+  const alias = document.getElementById('mat-popup-alias').value.trim();
+
+  if (!S.pricebook[k]) S.pricebook[k] = { price: 0, unit: '', comment: '', alias: '' };
+  S.pricebook[k].price = price;
+  S.pricebook[k].alias = alias;
+
+  // Clean up if both empty
+  const pb = S.pricebook[k];
+  if (!pb.price && !pb.alias && !pb.unit && !pb.comment) delete S.pricebook[k];
+
+  pbSave();
+  closeMatPopup();
+
+  // Recalc
+  if (S.calcRows.length) {
+    clearTimeout(window._recalcTimer);
+    window._recalcTimer = setTimeout(() => runCalc(true), 300);
+  }
 }
 
 // ── Print ────────────────────────────────────────────────────────────────
