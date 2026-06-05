@@ -1703,9 +1703,67 @@ function saveMatPopup() {
 
 // ── Print ────────────────────────────────────────────────────────────────
 function printCurrent() {
-  // Открываем модальное окно с настройками печати
+  // Определяем активную вкладку
+  const activeTab = document.querySelector('.section.active');
+  const tabId = activeTab ? activeTab.id : '';
+
+  // Для детализации — сразу печатаем без модалки
+  if (tabId === 'tab-drill') {
+    printDrillDirect();
+    return;
+  }
+
+  // Для остальных — модалка с нужными галочками
+  const isCalc   = tabId === 'tab-calc';
+  const isReport = tabId === 'tab-report';
+  if (document.getElementById('pr-calc'))   document.getElementById('pr-calc').checked   = isCalc;
+  if (document.getElementById('pr-totals')) document.getElementById('pr-totals').checked = isCalc;
+  if (document.getElementById('pr-details')) document.getElementById('pr-details').checked = false;
+  if (document.getElementById('pr-report')) document.getElementById('pr-report').checked  = isReport;
+
   const modal = document.getElementById('print-modal');
   if (modal) modal.style.display = 'flex';
+}
+
+function printDrillDirect() {
+  // Печатаем только детализацию текущего изделия
+  const drillContent = document.getElementById('drill-content');
+  if (!drillContent || drillContent.querySelector('.empty')) {
+    alert('Выберите изделие для детализации');
+    return;
+  }
+
+  const sel = document.getElementById('drill-select');
+  const title = sel?.options[sel.selectedIndex]?.text || 'Детализация';
+  const orient = 'landscape';
+
+  // Ориентация
+  let styleEl = document.getElementById('print-orient-style');
+  if (!styleEl) { styleEl = document.createElement('style'); styleEl.id = 'print-orient-style'; document.head.appendChild(styleEl); }
+  styleEl.textContent = '@media print { @page { size: A4 landscape; margin: 1cm 1.2cm; } }';
+
+  // Помечаем только drill секцию
+  document.querySelectorAll('.section').forEach(s => s.classList.remove('print-target'));
+  document.getElementById('tab-drill').classList.add('print-target');
+
+  // Шапка
+  let header = drillContent.querySelector('.print-header');
+  if (!header) { header = document.createElement('div'); header.className = 'print-header'; drillContent.prepend(header); }
+  header.innerHTML = \`<div style="display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #000;padding-bottom:.5rem;margin-bottom:1rem">
+    <div>
+      <div style="font-size:15px;font-weight:700">Детализация себестоимости: \${title}</div>
+      <div style="font-size:10px;color:#555">Дата: \${new Date().toLocaleString('ru-RU')}</div>
+    </div>
+    <div style="font-size:10px;color:#555">cost.calc · Калькулятор себестоимости мебели</div>
+  </div>\`;
+
+  setTimeout(() => {
+    window.print();
+    setTimeout(() => {
+      document.querySelectorAll('.section').forEach(s => s.classList.remove('print-target'));
+      document.querySelectorAll('.print-header').forEach(h => h.remove());
+    }, 800);
+  }, 150);
 }
 
 function closePrintModal() {
