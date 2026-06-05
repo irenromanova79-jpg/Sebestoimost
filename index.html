@@ -594,14 +594,16 @@ function lsClear(key) { try { localStorage.removeItem(key); } catch(e) {} }
 function pbLoad() {
   const saved = lsLoad(LS.PRICEBOOK);
   if (saved) {
-    // Миграция: перенормализуем ключи (на случай смены логики norm())
-    const migrated = {};
-    for (const [k, v] of Object.entries(saved)) {
-      const nk = norm(k);
-      migrated[nk] = v;
-    }
-    S.pricebook = migrated;
-    lsSave(LS.PRICEBOOK, S.pricebook);
+    // Миграция: перенормализуем ключи
+    try {
+      const migrated = {};
+      for (const [k, v] of Object.entries(saved)) {
+        const nk = norm(k);
+        migrated[nk] = v;
+      }
+      S.pricebook = migrated;
+      lsSave(LS.PRICEBOOK, S.pricebook);
+    } catch(e) { S.pricebook = saved; }
   }
   updatePbBadge();
 }
@@ -626,6 +628,7 @@ function updatePbBadge() {
 function specsLoad() {
   const saved = lsLoad(LS.SPECS);
   if (saved && saved.specs && Object.keys(saved.specs).length > 0) {
+    try {
     // Restore specs — convert arrays back (JSON doesn't preserve Set/Map)
     S.specs = saved.specs;
     S.allMaterials = new Set(saved.allMaterials || []);
@@ -635,6 +638,7 @@ function specsLoad() {
     document.getElementById('uz-stock').style.display = 'block';
     updateCacheLabel('specs', saved.fname, saved.date);
     return true;
+    } catch(e) { console.warn('specsLoad restore error:', e); S.specs = {}; S.allMaterials = new Set(); return false; }
   }
   return false;
 }
@@ -652,9 +656,11 @@ function pricesLoad() {
   const saved = lsLoad(LS.PRICES);
   if (saved && saved.prices && Object.keys(saved.prices).length > 0) {
     // Перенормализуем ключи цен
-    const mp = {};
-    for (const [k, v] of Object.entries(saved.prices)) mp[norm(k)] = v;
-    S.purchasePrices = mp;
+    try {
+      const mp = {};
+      for (const [k, v] of Object.entries(saved.prices)) mp[norm(k)] = v;
+      S.purchasePrices = mp;
+    } catch(e) { S.purchasePrices = saved.prices; }
     S.ready.prices = true;
     const cnt = Object.keys(S.purchasePrices).length;
     setUploaded('uz-prices', 'us-prices', saved.fname || 'из кэша', cnt + ' позиций');
@@ -678,13 +684,26 @@ function updateCacheLabel(type, fname, date) {
   if (el) el.innerHTML = `<span style="color:var(--green);font-size:11px">💾 сохранено ${date} · ${fname}</span>`;
 }
 
-// Init on load
-pbLoad();
-const specsRestored  = specsLoad();
-const pricesRestored = pricesLoad();
+// Init on load — всё в try-catch чтобы ошибка не блокировала приложение
+try { pbLoad(); } catch(e) { console.warn('pbLoad error:', e); S.pricebook = {}; }
+
+let specsRestored = false, pricesRestored = false;
+try { specsRestored = specsLoad(); } catch(e) { console.warn('specsLoad error:', e); S.specs = {}; S.allMaterials = new Set(); S.ready.specs = false; }
+try { pricesRestored = pricesLoad(); } catch(e) { console.warn('pricesLoad error:', e); S.purchasePrices = {}; S.ready.prices = false; }
+
 if (specsRestored || pricesRestored) {
   checkReady();
-  if (specsRestored && S.allMaterials.size) renderPricesEditor();
+  if (specsRestored && S.allMaterials.size) { try { renderPricesEditor(); } catch(e) { console.warn('renderPricesEditor error:', e); } }
+} else {
+  // Проверяем — есть ли данные в localStorage но не загрузились?
+  try {
+    const hasSpecs = localStorage.getItem('costcalc_specs');
+    const hasPrices = localStorage.getItem('costcalc_prices');
+    if ((hasSpecs || hasPrices) && !specsRestored && !pricesRestored) {
+      const banner = document.getElementById('ls-error-banner');
+      if (banner) banner.style.display = 'flex';
+    }
+  } catch(e) {}
 }
 
 // effective price: pricebook > manual > stock > purchase
@@ -1371,6 +1390,12 @@ function setUploaded(zoneId, statusId, name, info) {
   document.getElementById(statusId).style.display = 'block';
 }
 
+function hardResetCache() {
+  if (!confirm('Сбросить весь кэш? Спецификации, цены закупок и справочник цен нужно будет загрузить заново.\n\nСправочник цен — сначала скачайте его через «Скачать xlsx» чтобы не потерять данные.')) return;
+  try { localStorage.clear(); } catch(e) {}
+  location.reload();
+}
+
 function checkReady() {
   const any = S.ready.sales || S.ready.prices || S.ready.specs;
   const all = S.ready.sales && S.ready.prices && S.ready.specs;
@@ -1749,13 +1774,13 @@ function printDrillDirect() {
   // Шапка
   let header = drillContent.querySelector('.print-header');
   if (!header) { header = document.createElement('div'); header.className = 'print-header'; drillContent.prepend(header); }
-  header.innerHTML = \`<div style="display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #000;padding-bottom:.5rem;margin-bottom:1rem">
+  header.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #000;padding-bottom:.5rem;margin-bottom:1rem">
     <div>
-      <div style="font-size:15px;font-weight:700">Детализация себестоимости: \${title}</div>
-      <div style="font-size:10px;color:#555">Дата: \${new Date().toLocaleString('ru-RU')}</div>
+      <div style="font-size:15px;font-weight:700">Детализация себестоимости: ${title}</div>
+      <div style="font-size:10px;color:#555">Дата: ${new Date().toLocaleString('ru-RU')}</div>
     </div>
     <div style="font-size:10px;color:#555">cost.calc · Калькулятор себестоимости мебели</div>
-  </div>\`;
+  </div>`;
 
   setTimeout(() => {
     window.print();
