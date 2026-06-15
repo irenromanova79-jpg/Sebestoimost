@@ -573,6 +573,7 @@ select:focus{outline:none;border-color:var(--accent)}
 
   </main>
 <!-- Inline material edit popup -->
+<div id="mat-popup-overlay" style="display:none;position:fixed;inset:0;z-index:1999;background:rgba(0,0,0,.4)" onclick="closeMatPopup()"></div>
 <div id="mat-popup" style="display:none;position:fixed;z-index:2000;background:var(--bg2);border:1px solid var(--border);border-radius:var(--r2);padding:1rem;width:340px;box-shadow:0 8px 32px rgba(0,0,0,.5)">
   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem">
     <div style="font-size:12px;font-weight:500;color:var(--text2)" id="mat-popup-title">Материал</div>
@@ -1767,50 +1768,50 @@ function openMatPopup(matName, btnEl) {
   if (!S.pricebook[k]) S.pricebook[k] = { price: 0, unit: '', comment: '', alias: '' };
   const pb = S.pricebook[k];
 
-  // Fill popup
+  // Fill popup fields
   document.getElementById('mat-popup-title').textContent = 'Задать цену / аналог';
   document.getElementById('mat-popup-name').textContent = matName;
   document.getElementById('mat-popup-price').value = pb.price > 0 ? pb.price : '';
   document.getElementById('mat-popup-alias').value = pb.alias || '';
 
-  // Fill datalist with all known materials
+  // Fill datalist
   const dl = document.getElementById('mat-popup-datalist');
   const allKnown = [...new Set([...S.allMaterials, ...Object.keys(S.purchasePrices), ...Object.keys(S.stockPrices)])].sort((a,b)=>a.localeCompare(b,'ru'));
   dl.innerHTML = allKnown.map(n => `<option value="${n.replace(/"/g,'&quot;')}">`).join('');
 
-  // Position popup near button
+  // Show overlay + popup
+  document.getElementById('mat-popup-overlay').style.display = 'block';
   const popup = document.getElementById('mat-popup');
   popup.style.display = 'block';
-  const rect = btnEl.getBoundingClientRect();
-  const popW = 340, popH = 260;
-  let top = rect.bottom + 8;
-  let left = rect.left;
-  if (left + popW > window.innerWidth - 8) left = window.innerWidth - popW - 8;
-  if (top + popH > window.innerHeight - 8) top = rect.top - popH - 8;
-  popup.style.top = Math.max(8, top) + 'px';
-  popup.style.left = Math.max(8, left) + 'px';
 
-  // Focus price if no price, alias if price exists
+  // Position near button if provided, else center
+  if (btnEl) {
+    const rect = btnEl.getBoundingClientRect();
+    const popW = 340, popH = 280;
+    let top = rect.bottom + 8;
+    let left = rect.left;
+    if (left + popW > window.innerWidth - 8) left = window.innerWidth - popW - 8;
+    if (top + popH > window.innerHeight - 8) top = rect.top - popH - 8;
+    popup.style.top = Math.max(8, top) + 'px';
+    popup.style.left = Math.max(8, left) + 'px';
+    popup.style.transform = 'none';
+  } else {
+    popup.style.top = '50%';
+    popup.style.left = '50%';
+    popup.style.transform = 'translate(-50%,-50%)';
+  }
+
+  // Focus
   setTimeout(() => {
     const priceInp = document.getElementById('mat-popup-price');
-    const aliasInp = document.getElementById('mat-popup-alias');
-    if (pb.price > 0) aliasInp.focus(); else priceInp.focus();
+    if (pb.price > 0) document.getElementById('mat-popup-alias').focus();
+    else priceInp.focus();
   }, 50);
-
-  // Close on outside click — delay longer to avoid catching the opening click
-  setTimeout(() => { document.addEventListener('click', _popupOutsideClick); }, 300);
-}
-
-function _popupOutsideClick(e) {
-  const popup = document.getElementById('mat-popup');
-  if (!popup.contains(e.target)) {
-    closeMatPopup();
-  }
 }
 
 function closeMatPopup() {
   document.getElementById('mat-popup').style.display = 'none';
-  document.removeEventListener('click', _popupOutsideClick);
+  document.getElementById('mat-popup-overlay').style.display = 'none';
   _popupMatKey = null;
 }
 
