@@ -475,15 +475,43 @@ select:focus{outline:none;border-color:var(--accent)}
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1rem">
         <div class="card">
           <div class="card-title">Загрузить список</div>
-          <div class="upload-zone" onclick="document.getElementById('f-prod').click()" style="padding:1rem;text-align:center;margin-bottom:.75rem">
-            <span style="font-size:24px;display:block;margin-bottom:.25rem">🏭</span>
-            <div style="font-size:13px;font-weight:500">Файл полуфабрикатов</div>
-            <div style="font-size:11px;color:var(--text2)">xlsx: Наименование + Количество</div>
+          <!-- Paste area -->
+          <div style="margin-bottom:.75rem">
+            <div style="font-size:11px;color:var(--text2);margin-bottom:.4rem;display:flex;justify-content:space-between">
+              <span>📋 Вставьте данные из Excel (Ctrl+V)</span>
+              <span style="color:var(--text3)">Колонки: Наименование | Количество</span>
+            </div>
+            <textarea id="prod-paste-area"
+              placeholder="Скопируйте ячейки из Excel и вставьте сюда...&#10;&#10;Пример:&#10;Сиденье Гольф 11,12(Эдвин)	6&#10;Сиденье Форио	8&#10;Спинка Гольф 12	4"
+              style="width:100%;height:120px;background:var(--bg3);border:1px solid var(--border);border-radius:var(--r);color:var(--text);font-size:12px;font-family:var(--mono);padding:.625rem;resize:vertical;line-height:1.6"
+              onpaste="setTimeout(()=>parsePastedData(),50)"
+              oninput="parsePastedData()"></textarea>
+            <div id="prod-paste-status" style="font-size:11px;color:var(--text3);margin-top:.25rem"></div>
           </div>
-          <input type="file" id="f-prod" accept=".xlsx,.xls,.csv" style="display:none" onchange="loadProduction(this)">
+
+          <!-- Divider -->
+          <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.75rem">
+            <div style="flex:1;height:1px;background:var(--border)"></div>
+            <span style="font-size:11px;color:var(--text3)">или</span>
+            <div style="flex:1;height:1px;background:var(--border)"></div>
+          </div>
+
+          <!-- File upload -->
+          <div style="display:flex;gap:.5rem;align-items:center;margin-bottom:.75rem">
+            <div class="upload-zone" onclick="document.getElementById('f-prod').click()" style="flex:1;padding:.625rem 1rem;display:flex;align-items:center;gap:.5rem">
+              <span>📁</span>
+              <div>
+                <div style="font-size:12px;font-weight:500">Загрузить файл xlsx</div>
+                <div style="font-size:10px;color:var(--text2)">Наименование + Количество</div>
+              </div>
+            </div>
+            <input type="file" id="f-prod" accept=".xlsx,.xls,.csv" style="display:none" onchange="loadProduction(this)">
+          </div>
           <div id="prod-file-status"></div>
-          <div style="margin-top:.75rem">
-            <div style="font-size:11px;color:var(--text2);margin-bottom:.4rem">Или добавьте вручную:</div>
+
+          <!-- Manual add -->
+          <div style="margin-top:.5rem">
+            <div style="font-size:11px;color:var(--text2);margin-bottom:.4rem">Добавить вручную:</div>
             <div style="display:flex;gap:.5rem">
               <input type="text" class="inp" id="prod-add-name" list="prod-datalist" placeholder="Название полуфабриката..." style="flex:1">
               <datalist id="prod-datalist"></datalist>
@@ -1982,7 +2010,57 @@ function doPrint() {
 
 
 // ── Production ────────────────────────────────────────────────────────────
-const P = { items: [] }; // {nom, qty, cost, full, missing, tree}
+const P = { items: [] };
+
+function parsePastedData() {
+  const raw = document.getElementById('prod-paste-area').value;
+  if (!raw.trim()) {
+    document.getElementById('prod-paste-status').textContent = '';
+    return;
+  }
+
+  const lines = raw.split('\n').map(l => l.trim()).filter(Boolean);
+  const parsed = [];
+  let errors = 0;
+
+  lines.forEach(line => {
+    // Tab-separated (from Excel) or semicolon or multiple spaces
+    const parts = line.split(/\t|;|  +/);
+    if (parts.length < 1) return;
+
+    const nom = parts[0].trim();
+    if (!nom) return;
+
+    // Quantity: look for a number in remaining parts
+    let qty = 1;
+    for (let i = 1; i < parts.length; i++) {
+      const n = parseFloat(parts[i].replace(',', '.'));
+      if (!isNaN(n) && n > 0) { qty = n; break; }
+    }
+    // If only one column, check if last word is a number
+    if (parts.length === 1) {
+      const words = nom.split(/\s+/);
+      const lastNum = parseFloat(words[words.length - 1].replace(',', '.'));
+      if (!isNaN(lastNum) && lastNum > 0 && lastNum < 10000) {
+        qty = lastNum;
+        // Remove qty from name
+      }
+    }
+
+    if (nom.toLowerCase().startsWith('итого') || nom.toLowerCase().startsWith('наимен')) return;
+    parsed.push({ nom, qty });
+  });
+
+  if (parsed.length > 0) {
+    P.items = parsed;
+    renderProdList();
+    document.getElementById('prod-paste-status').innerHTML =
+      `<span style="color:var(--green)">✓ Распознано ${parsed.length} позиций</span>`;
+  } else {
+    document.getElementById('prod-paste-status').innerHTML =
+      `<span style="color:var(--amber)">Не удалось распознать данные. Формат: Название [Tab] Количество</span>`;
+  }
+} // {nom, qty, cost, full, missing, tree}
 
 function loadProduction(inp) {
   if (!inp.files[0]) return;
