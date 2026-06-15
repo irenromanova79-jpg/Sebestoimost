@@ -1797,8 +1797,8 @@ function openMatPopup(matName, btnEl) {
     if (pb.price > 0) aliasInp.focus(); else priceInp.focus();
   }, 50);
 
-  // Close on outside click
-  setTimeout(() => { document.addEventListener('click', _popupOutsideClick); }, 100);
+  // Close on outside click — delay longer to avoid catching the opening click
+  setTimeout(() => { document.addEventListener('click', _popupOutsideClick); }, 300);
 }
 
 function _popupOutsideClick(e) {
@@ -1831,11 +1831,12 @@ function saveMatPopup() {
   pbSave();
   closeMatPopup();
 
-  // Recalc
-  if (S.calcRows.length) {
-    clearTimeout(window._recalcTimer);
-    window._recalcTimer = setTimeout(() => runCalc(true), 300);
-  }
+  // Recalc все что нужно
+  clearTimeout(window._recalcTimer);
+  window._recalcTimer = setTimeout(() => {
+    if (S.calcRows.length) runCalc(true);
+    if (P.items.length && P.items.some(i => i.cost !== undefined)) calcProduction(true);
+  }, 300);
 }
 
 // ── Print ────────────────────────────────────────────────────────────────
@@ -2320,7 +2321,7 @@ function calcProduction(silent) {
       <td class="r" style="font-weight:500">${m.qty % 1 === 0 ? m.qty : m.qty.toFixed(3)}</td>
       <td class="r">
         <button class="btn btn-sm btn-ghost" style="font-size:12px;padding:2px 8px;color:${unitPrice?'var(--text)':'var(--amber)'};font-family:var(--mono)"
-          onclick="openMatPopup(${safeN},this)">
+          onclick="event.stopPropagation();openMatPopup(${safeN},this)">
           ${unitPrice ? fmt(unitPrice) : '+ цена'} ${unitPrice?'✎':''}
         </button>
       </td>
