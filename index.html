@@ -211,6 +211,9 @@ select:focus{outline:none;border-color:var(--accent)}
     </div>
     <div class="nav-sep"></div>
     <div class="nav-label">Анализ</div>
+    <div class="nav-item" data-tab="production">
+      <span class="nav-icon">🏭</span> Производство
+    </div>
     <div class="nav-item" data-tab="calc">
       <span class="nav-icon">≡</span> Расчёт
     </div>
@@ -460,6 +463,80 @@ select:focus{outline:none;border-color:var(--accent)}
                 </td>
               </tr>
             </tfoot>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- PRODUCTION -->
+    <div id="tab-production" class="section">
+      <div class="alert alert-blue"><span>ℹ</span><div>Загрузите список полуфабрикатов с количеством — приложение рассчитает потребность в сырье и себестоимость производственного задания.</div></div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1rem">
+        <div class="card">
+          <div class="card-title">Загрузить список</div>
+          <div class="upload-zone" onclick="document.getElementById('f-prod').click()" style="padding:1rem;text-align:center;margin-bottom:.75rem">
+            <span style="font-size:24px;display:block;margin-bottom:.25rem">🏭</span>
+            <div style="font-size:13px;font-weight:500">Файл полуфабрикатов</div>
+            <div style="font-size:11px;color:var(--text2)">xlsx: Наименование + Количество</div>
+          </div>
+          <input type="file" id="f-prod" accept=".xlsx,.xls,.csv" style="display:none" onchange="loadProduction(this)">
+          <div id="prod-file-status"></div>
+          <div style="margin-top:.75rem">
+            <div style="font-size:11px;color:var(--text2);margin-bottom:.4rem">Или добавьте вручную:</div>
+            <div style="display:flex;gap:.5rem">
+              <input type="text" class="inp" id="prod-add-name" list="prod-datalist" placeholder="Название полуфабриката..." style="flex:1">
+              <datalist id="prod-datalist"></datalist>
+              <input type="number" class="inp" id="prod-add-qty" placeholder="Кол-во" style="width:80px" min="1">
+              <button class="btn btn-sm btn-primary" onclick="addProdItem()">+</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">Список к производству</div>
+          <div id="prod-list-empty" style="color:var(--text3);font-size:13px;padding:.5rem 0">Нет позиций</div>
+          <table id="prod-list-table" style="display:none;width:100%;border-collapse:collapse;font-size:13px">
+            <thead><tr>
+              <th style="text-align:left;padding:5px 8px;border-bottom:1px solid var(--border);color:var(--text2);font-size:11px">Полуфабрикат</th>
+              <th style="text-align:right;padding:5px 8px;border-bottom:1px solid var(--border);color:var(--text2);font-size:11px">Кол-во</th>
+              <th style="text-align:right;padding:5px 8px;border-bottom:1px solid var(--border);color:var(--text2);font-size:11px">Себ/ед</th>
+              <th style="text-align:right;padding:5px 8px;border-bottom:1px solid var(--border);color:var(--text2);font-size:11px">Итого</th>
+              <th style="padding:5px 4px"></th>
+            </tr></thead>
+            <tbody id="prod-list-body"></tbody>
+          </table>
+          <div id="prod-total" style="display:none;margin-top:.75rem;padding:.75rem;background:var(--bg3);border-radius:var(--r)">
+            <div style="display:flex;justify-content:space-between;align-items:center">
+              <span style="font-size:13px;color:var(--text2)">Итого себестоимость:</span>
+              <span style="font-size:20px;font-weight:500;color:var(--accent)" id="prod-total-val">0 ₽</span>
+            </div>
+          </div>
+          <button class="btn btn-primary" style="width:100%;margin-top:.75rem;justify-content:center" onclick="calcProduction()">▶ Рассчитать потребность в сырье</button>
+        </div>
+      </div>
+
+      <div id="prod-result" style="display:none">
+        <div class="metrics" id="prod-metrics" style="margin-bottom:1rem"></div>
+        <div style="display:flex;gap:.5rem;margin-bottom:.75rem;align-items:center">
+          <span style="font-size:13px;font-weight:500">Потребность в сырье (сводная)</span>
+          <span class="toolbar-spacer"></span>
+          <button class="btn btn-sm" onclick="exportProduction()">↓ Полный отчёт xlsx</button>
+          <button class="btn btn-primary btn-sm" onclick="exportOprikhodovanie()">↓ Для оприходования 1С</button>
+        </div>
+        <div class="card" style="padding:0;overflow:hidden">
+          <table>
+            <thead><tr>
+              <th>Сырьё / Материал</th>
+              <th class="r">Ед. изм.</th>
+              <th class="r">Потребность</th>
+              <th class="r">Цена/ед, ₽</th>
+              <th class="r">Сумма, ₽</th>
+              <th class="r">Доля, %</th>
+              <th>Источник</th>
+              <th>Входит в</th>
+            </tr></thead>
+            <tbody id="prod-materials-body"></tbody>
           </table>
         </div>
       </div>
@@ -871,6 +948,7 @@ function loadSpecs(inp) {
     setUploaded('uz-specs', 'us-specs', inp.files[0].name, Object.keys(S.specs).length + ' спецификаций');
     document.getElementById('uz-stock').style.display = 'block';
     specsSave(inp.files[0].name);
+    fillProdDatalist();
     checkReady();
   });
 }
@@ -1900,6 +1978,304 @@ function doPrint() {
       if (noPriceBlock) noPriceBlock.remove();
     }, 800);
   }, 200);
+}
+
+
+// ── Production ────────────────────────────────────────────────────────────
+const P = { items: [] }; // {nom, qty, cost, full, missing, tree}
+
+function loadProduction(inp) {
+  if (!inp.files[0]) return;
+  readXlsx(inp.files[0], rows => {
+    let hdr = -1;
+    for (let i = 0; i < Math.min(rows.length, 5); i++) {
+      if (rows[i] && rows[i].some(c => String(c||'').match(/наимен|номенкл|назван/i))) { hdr = i; break; }
+    }
+    if (hdr < 0) hdr = 0;
+    const ci = { nom: -1, qty: -1 };
+    (rows[hdr]||[]).forEach((c, i) => {
+      const s = String(c||'').toLowerCase();
+      if (s.match(/наимен|номенкл|назван/)) ci.nom = i;
+      else if (s.match(/колич|кол/)) ci.qty = i;
+    });
+    if (ci.nom < 0) ci.nom = 0;
+    if (ci.qty < 0) ci.qty = 1;
+
+    P.items = [];
+    for (let i = hdr + 1; i < rows.length; i++) {
+      const r = rows[i]; if (!r || !r[ci.nom]) continue;
+      const nom = String(r[ci.nom]||'').trim();
+      if (!nom || nom.toLowerCase().startsWith('итого')) continue;
+      const qty = parseFloat(String(r[ci.qty]||'1').replace(',','.')) || 1;
+      P.items.push({ nom, qty });
+    }
+    document.getElementById('prod-file-status').innerHTML =
+      `<div class="file-ok"><i class="ti ti-check"></i><span style="flex:1">${inp.files[0].name}</span><span style="font-weight:500">${P.items.length} позиций</span></div>`;
+    renderProdList();
+    fillProdDatalist();
+  });
+}
+
+function fillProdDatalist() {
+  // Заполняем datalist всеми спецификациями
+  const dl = document.getElementById('prod-datalist');
+  const names = Object.values(S.specs).map(sp => sp.nom + (sp.char ? ' (' + sp.char + ')' : ''));
+  dl.innerHTML = [...new Set(names)].sort((a,b)=>a.localeCompare(b,'ru'))
+    .map(n => `<option value="${n.replace(/"/g,'&quot;')}">`).join('');
+}
+
+function addProdItem() {
+  const nomEl = document.getElementById('prod-add-name');
+  const qtyEl = document.getElementById('prod-add-qty');
+  const nom = nomEl.value.trim();
+  const qty = parseFloat(qtyEl.value) || 1;
+  if (!nom) { nomEl.focus(); return; }
+  P.items.push({ nom, qty });
+  nomEl.value = '';
+  qtyEl.value = '';
+  nomEl.focus();
+  renderProdList();
+}
+
+function removeProdItem(idx) {
+  P.items.splice(idx, 1);
+  renderProdList();
+}
+
+function renderProdList() {
+  const tbody = document.getElementById('prod-list-body');
+  const empty = document.getElementById('prod-list-empty');
+  const table = document.getElementById('prod-list-table');
+  const totalDiv = document.getElementById('prod-total');
+
+  if (!P.items.length) {
+    empty.style.display = 'block';
+    table.style.display = 'none';
+    totalDiv.style.display = 'none';
+    return;
+  }
+  empty.style.display = 'none';
+  table.style.display = 'table';
+
+  tbody.innerHTML = P.items.map((item, idx) => {
+    const key = findSpec(item.nom, '');
+    const hasSpec = !!key;
+    const cost = item.cost || 0;
+    const total = cost * item.qty;
+    return `<tr>
+      <td style="padding:4px 8px;border-bottom:1px solid var(--border);font-size:12px">
+        ${item.nom}
+        ${!hasSpec ? '<span class="badge badge-gray" style="margin-left:4px">нет спец.</span>' : ''}
+      </td>
+      <td style="text-align:right;padding:4px 8px;border-bottom:1px solid var(--border)">
+        <input type="number" class="price-edit-input" style="width:55px;text-align:right" value="${item.qty}" min="1"
+          onchange="P.items[${idx}].qty=parseFloat(this.value)||1;renderProdList()">
+      </td>
+      <td style="text-align:right;padding:4px 8px;border-bottom:1px solid var(--border);font-family:var(--mono);font-size:12px;color:var(--text2)">${cost ? fmt(cost) : '—'}</td>
+      <td style="text-align:right;padding:4px 8px;border-bottom:1px solid var(--border);font-family:var(--mono);font-size:12px">${total ? fmt(total) : '—'}</td>
+      <td style="padding:4px 4px;border-bottom:1px solid var(--border)">
+        <button class="btn btn-sm btn-ghost" style="padding:2px 6px;color:var(--red)" onclick="removeProdItem(${idx})">×</button>
+      </td>
+    </tr>`;
+  }).join('');
+
+  const grandTotal = P.items.reduce((s, i) => s + (i.cost||0)*i.qty, 0);
+  if (grandTotal > 0) {
+    totalDiv.style.display = 'block';
+    document.getElementById('prod-total-val').textContent = fmt(grandTotal) + ' ₽';
+  } else {
+    totalDiv.style.display = 'none';
+  }
+}
+
+function calcProduction() {
+  if (!P.items.length) { alert('Добавьте полуфабрикаты в список'); return; }
+  if (!Object.keys(S.specs).length) { alert('Загрузите спецификации'); return; }
+
+  // Aggregate materials across all items
+  const matMap = {}; // norm_name -> {name, unit, qty, cost, src, parents:[]}
+
+  P.items.forEach(item => {
+    const r = calcCost(item.nom, '', new Set(), 0);
+    item.cost = r.cost;
+    item.full = r.full;
+    item.missing = r.missing;
+
+    // Walk tree and accumulate materials multiplied by item qty
+    function walkTree(nodes, multiplier) {
+      (nodes||[]).forEach(n => {
+        if (n.leaf) {
+          const k = norm(n.name);
+          if (!matMap[k]) matMap[k] = { name: n.name, unit: n.unit||'', qty: 0, cost: 0, src: n.src, parents: new Set() };
+          matMap[k].qty  += n.qty * multiplier * item.qty;
+          matMap[k].cost += n.cost * multiplier * item.qty;
+          matMap[k].parents.add(item.nom);
+        } else {
+          walkTree(n.children, multiplier * n.qty * item.qty / (n.qty * item.qty));
+        }
+      });
+    }
+    // Use tree from calcCost directly with item.qty multiplier
+    function collectLeaves(nodes, mult) {
+      (nodes||[]).forEach(n => {
+        if (!n.children || !n.children.length) {
+          const k = norm(n.name);
+          if (!matMap[k]) matMap[k] = { name: n.name, unit: n.unit||'', qty: 0, cost: 0, src: n.src, parents: new Set() };
+          matMap[k].qty  += n.qty * mult;
+          matMap[k].cost += n.cost * mult;
+          matMap[k].parents.add(item.nom);
+        } else {
+          collectLeaves(n.children, mult);
+        }
+      });
+    }
+    collectLeaves(r.tree, item.qty);
+  });
+
+  renderProdList();
+
+  // Render materials table
+  const totalCost = Object.values(matMap).reduce((s, m) => s + m.cost, 0);
+  const mats = Object.values(matMap).sort((a, b) => b.cost - a.cost);
+  const srcLabel = { purchase: 'закупки', stock: 'остатки', manual: 'вручную', pricebook: 'справочник ★', alias: 'аналог →', none: 'нет цены' };
+
+  document.getElementById('prod-result').style.display = 'block';
+
+  const noPrice = mats.filter(m => !m.cost).length;
+  const partialItems = P.items.filter(i => !i.full).length;
+  document.getElementById('prod-metrics').innerHTML = `
+    <div class="metric"><div class="metric-label">Позиций к производству</div><div class="metric-value">${P.items.length}</div></div>
+    <div class="metric"><div class="metric-label">Итого себестоимость</div><div class="metric-value accent" style="color:var(--accent)">${fmtM(totalCost)}</div></div>
+    <div class="metric"><div class="metric-label">Видов сырья</div><div class="metric-value">${mats.length}</div></div>
+    <div class="metric"><div class="metric-label">Без цены / Неполных</div><div class="metric-value amber">${noPrice} / ${partialItems}</div></div>`;
+
+  document.getElementById('prod-materials-body').innerHTML = mats.map(m => {
+    const pct = totalCost > 0 ? (m.cost / totalCost * 100) : 0;
+    const unitPrice = m.qty > 0 ? m.cost / m.qty : 0;
+    const parents = [...m.parents].slice(0, 3).join(', ') + (m.parents.size > 3 ? '...' : '');
+    const rowBg = !m.cost ? 'background:var(--amber-bg)' : '';
+    return `<tr style="${rowBg}">
+      <td>${m.name}${!m.cost ? ' <span class="badge badge-amber" style="font-size:10px">нет цены</span>' : ''}</td>
+      <td class="r" style="color:var(--text2)">${m.unit||'—'}</td>
+      <td class="r" style="font-weight:500">${m.qty % 1 === 0 ? m.qty : m.qty.toFixed(3)}</td>
+      <td class="r">${unitPrice ? fmt(unitPrice) : '—'}</td>
+      <td class="r" style="font-weight:${pct>10?'500':'400'}">${m.cost ? fmt(m.cost) : '—'}</td>
+      <td class="r" style="color:var(--text2)">${pct > 0 ? pct.toFixed(1)+'%' : '—'}</td>
+      <td style="font-size:11px;color:var(--text2)">${srcLabel[m.src]||'—'}</td>
+      <td style="font-size:11px;color:var(--text3)">${parents}</td>
+    </tr>`;
+  }).join('') || '<tr><td colspan="8" class="no-data" style="padding:1.5rem">Нет данных</td></tr>';
+
+  // Scroll to results
+  document.getElementById('prod-result').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function exportProduction() {
+  const wb = XLSX.utils.book_new();
+
+  // Sheet 1: Summary
+  const hdr1 = ['Полуфабрикат','Количество','Себест/ед, ₽','Итого, ₽','Статус'];
+  const rows1 = P.items.map(i => [i.nom, i.qty, Math.round(i.cost||0), Math.round((i.cost||0)*i.qty), i.full?'полный':'неполный']);
+  const ws1 = XLSX.utils.aoa_to_sheet([hdr1, ...rows1]);
+  ws1['!cols'] = [{wch:40},{wch:10},{wch:14},{wch:14},{wch:12}];
+  XLSX.utils.book_append_sheet(wb, ws1, 'Производственное задание');
+
+  // Sheet 2: Materials
+  const hdr2 = ['Сырьё','Ед.изм.','Потребность','Цена/ед, ₽','Сумма, ₽','Доля, %','Источник','Входит в'];
+  const matList = document.querySelectorAll('#prod-materials-body tr');
+  const matData = [];
+  const matMap2 = {};
+  P.items.forEach(item => {
+    function collectLeaves(nodes, mult) {
+      (nodes||[]).forEach(n => {
+        if (!n.children || !n.children.length) {
+          const k = norm(n.name);
+          if (!matMap2[k]) matMap2[k] = { name: n.name, unit: n.unit||'', qty: 0, cost: 0, src: n.src, parents: new Set() };
+          matMap2[k].qty  += n.qty * mult;
+          matMap2[k].cost += n.cost * mult;
+          matMap2[k].parents.add(item.nom);
+        } else {
+          collectLeaves(n.children, mult);
+        }
+      });
+    }
+    const r = calcCost(item.nom, '', new Set(), 0);
+    collectLeaves(r.tree, item.qty);
+  });
+  const totalCost2 = Object.values(matMap2).reduce((s,m)=>s+m.cost,0);
+  Object.values(matMap2).sort((a,b)=>b.cost-a.cost).forEach(m => {
+    const up = m.qty>0?m.cost/m.qty:0;
+    const pct = totalCost2>0?(m.cost/totalCost2*100):0;
+    matData.push([m.name, m.unit||'', +m.qty.toFixed(4), Math.round(up)||'', Math.round(m.cost)||'', +pct.toFixed(1), m.src||'', [...m.parents].join(', ')]);
+  });
+  const ws2 = XLSX.utils.aoa_to_sheet([hdr2, ...matData]);
+  ws2['!cols'] = [{wch:40},{wch:8},{wch:12},{wch:12},{wch:12},{wch:8},{wch:14},{wch:50}];
+  XLSX.utils.book_append_sheet(wb, ws2, 'Потребность в сырье');
+
+  const date = new Date().toLocaleDateString('ru-RU').replace(/\./g,'-');
+  XLSX.writeFile(wb, `proizvodstvo_${date}.xlsx`);
+}
+
+function exportOprikhodovanie() {
+  if (!P.items.length || !P.items.some(i => i.cost > 0)) {
+    alert('Сначала выполните расчёт на вкладке Производство');
+    return;
+  }
+
+  // Группируем: одна строка на номенклатуру+характеристика
+  const grouped = {};
+  P.items.forEach(item => {
+    const m = item.nom.match(/^(.+?)\s*\((.+)\)$/);
+    const nom  = m ? m[1].trim() : item.nom;
+    const char = m ? m[2].trim() : '';
+    const key  = nom + '|||' + char;
+    if (!grouped[key]) grouped[key] = { nom, char, qty: 0, totalCost: 0, full: true, missing: [] };
+    grouped[key].qty       += item.qty;
+    grouped[key].totalCost += (item.cost || 0) * item.qty;
+    if (!item.full) grouped[key].full = false;
+    if (item.missing) grouped[key].missing.push(...item.missing);
+  });
+
+  const wb = XLSX.utils.book_new();
+
+  // Лист 1: Оприходование — готово для загрузки в 1С
+  const hdr = ['Номенклатура', 'Характеристика', 'Кол-во', 'Себестоимость/ед, ₽', 'Сумма, ₽', 'Статус расчёта'];
+  const rows = Object.values(grouped).map(g => {
+    const costPerUnit = g.qty > 0 ? g.totalCost / g.qty : 0;
+    const status = g.totalCost === 0 ? 'нет данных' : (g.full ? 'полный' : 'неполный — себест. занижена');
+    return [g.nom, g.char || '', g.qty, +costPerUnit.toFixed(2), +g.totalCost.toFixed(2), status];
+  });
+
+  const ws = XLSX.utils.aoa_to_sheet([hdr, ...rows]);
+  ws['!cols'] = [{wch:42},{wch:28},{wch:8},{wch:22},{wch:16},{wch:28}];
+  rows.forEach((_, ri) => {
+    const r = ri + 2;
+    ['D','E'].forEach(col => { if (ws[col+r]) ws[col+r].z = '#,##0.00'; });
+    if (ws['C'+r]) ws['C'+r].z = '#,##0';
+  });
+  // Итого
+  const lr = rows.length + 2;
+  ws['A'+lr] = { v: 'ИТОГО', t: 's' };
+  ws['C'+lr] = { v: rows.reduce((s,r)=>s+r[2],0), t: 'n', z: '#,##0' };
+  ws['E'+lr] = { v: +rows.reduce((s,r)=>s+r[4],0).toFixed(2), t: 'n', z: '#,##0.00' };
+  ws['!ref'] = `A1:F${lr}`;
+  XLSX.utils.book_append_sheet(wb, ws, 'Оприходование');
+
+  // Лист 2: Детализация для справки
+  const hdr2 = ['Полуфабрикат', 'Кол-во', 'Себест/ед, ₽', 'Итого, ₽', 'Статус', 'Нет цены на материалы'];
+  const rows2 = P.items.map(i => [
+    i.nom, i.qty,
+    +((i.cost||0).toFixed(2)),
+    +(((i.cost||0)*i.qty).toFixed(2)),
+    i.full ? 'полный' : 'неполный',
+    (i.missing||[]).filter(m => m !== 'нет спецификации').slice(0,5).join('; ')
+  ]);
+  const ws2 = XLSX.utils.aoa_to_sheet([hdr2, ...rows2]);
+  ws2['!cols'] = [{wch:42},{wch:8},{wch:14},{wch:14},{wch:12},{wch:60}];
+  XLSX.utils.book_append_sheet(wb, ws2, 'Детализация');
+
+  const date = new Date().toLocaleDateString('ru-RU').replace(/\./g,'-');
+  XLSX.writeFile(wb, `oprikhodovanie_${date}.xlsx`);
 }
 
 function exportCSV() {
