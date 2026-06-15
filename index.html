@@ -549,6 +549,7 @@ select:focus{outline:none;border-color:var(--accent)}
         <div style="display:flex;gap:.5rem;margin-bottom:.75rem;align-items:center">
           <span style="font-size:13px;font-weight:500">Потребность в сырье (сводная)</span>
           <span class="toolbar-spacer"></span>
+          <button class="btn btn-sm" onclick="calcProduction()" title="Пересчитать с актуальными ценами из справочника">↺ Пересчитать</button>
           <button class="btn btn-sm" onclick="exportProduction()">↓ Полный отчёт xlsx</button>
           <button class="btn btn-primary btn-sm" onclick="exportOprikhodovanie()">↓ Для оприходования 1С</button>
         </div>
@@ -1668,9 +1669,14 @@ function setPbField(inp) {
   pbSave();
   updatePbBadge();
   // Автопересчёт при изменении цены или алиаса
-  if ((field === 'price' || field === 'alias') && S.calcRows.length) {
+  if ((field === 'price' || field === 'alias')) {
     clearTimeout(window._recalcTimer);
-    window._recalcTimer = setTimeout(() => { renderPricebook(); runCalc(true); }, 500);
+    window._recalcTimer = setTimeout(() => {
+      renderPricebook();
+      if (S.calcRows.length) runCalc(true);
+      // Пересчитываем производство если оно было рассчитано
+      if (P.items.length && P.items.some(i => i.cost !== undefined)) calcProduction(true);
+    }, 500);
   }
 }
 
@@ -2120,6 +2126,14 @@ function removeProdItem(idx) {
   renderProdList();
 }
 
+const _prodExpanded = new Set();
+
+function toggleProdDetail(idx) {
+  if (_prodExpanded.has(idx)) _prodExpanded.delete(idx);
+  else _prodExpanded.add(idx);
+  renderProdList();
+}
+
 function renderProdList() {
   const tbody = document.getElementById('prod-list-body');
   const empty = document.getElementById('prod-list-empty');
@@ -2140,21 +2154,54 @@ function renderProdList() {
     const hasSpec = !!key;
     const cost = item.cost || 0;
     const total = cost * item.qty;
-    return `<tr>
-      <td style="padding:4px 8px;border-bottom:1px solid var(--border);font-size:12px">
+    const isExpanded = _prodExpanded.has(idx);
+    const hasTree = item.tree && item.tree.length > 0;
+
+    // Main row
+    let html = `<tr style="cursor:${hasTree?'pointer':'default'}" onclick="${hasTree?`toggleProdDetail(${idx})`:''}">
+      <td style="padding:5px 8px;border-bottom:${isExpanded?'none':'1px solid var(--border)'};font-size:12px">
+        ${hasTree ? `<span style="color:var(--text3);margin-right:5px;font-size:10px">${isExpanded?'▼':'▶'}</span>` : '<span style="margin-right:14px"></span>'}
         ${item.nom}
         ${!hasSpec ? '<span class="badge badge-gray" style="margin-left:4px">нет спец.</span>' : ''}
+        ${hasSpec && !item.full ? '<span class="badge badge-amber" style="margin-left:4px;font-size:9px">неполный</span>' : ''}
       </td>
-      <td style="text-align:right;padding:4px 8px;border-bottom:1px solid var(--border)">
+      <td style="text-align:right;padding:5px 8px;border-bottom:${isExpanded?'none':'1px solid var(--border)'}">
         <input type="number" class="price-edit-input" style="width:55px;text-align:right" value="${item.qty}" min="1"
+          onclick="event.stopPropagation()"
           onchange="P.items[${idx}].qty=parseFloat(this.value)||1;renderProdList()">
       </td>
-      <td style="text-align:right;padding:4px 8px;border-bottom:1px solid var(--border);font-family:var(--mono);font-size:12px;color:var(--text2)">${cost ? fmt(cost) : '—'}</td>
-      <td style="text-align:right;padding:4px 8px;border-bottom:1px solid var(--border);font-family:var(--mono);font-size:12px">${total ? fmt(total) : '—'}</td>
-      <td style="padding:4px 4px;border-bottom:1px solid var(--border)">
-        <button class="btn btn-sm btn-ghost" style="padding:2px 6px;color:var(--red)" onclick="removeProdItem(${idx})">×</button>
+      <td style="text-align:right;padding:5px 8px;border-bottom:${isExpanded?'none':'1px solid var(--border)'};font-family:var(--mono);font-size:12px;color:var(--text2)">${cost ? fmt(cost) : '—'}</td>
+      <td style="text-align:right;padding:5px 8px;border-bottom:${isExpanded?'none':'1px solid var(--border)'};font-family:var(--mono);font-size:12px;font-weight:500">${total ? fmt(total) : '—'}</td>
+      <td style="padding:5px 4px;border-bottom:${isExpanded?'none':'1px solid var(--border)'}">
+        <button class="btn btn-sm btn-ghost" style="padding:2px 6px;color:var(--red)" onclick="event.stopPropagation();removeProdItem(${idx})">×</button>
       </td>
     </tr>`;
+
+    // Detail rows — expanded tree
+    if (isExpanded && hasTree) {
+      html += `<tr><td colspan="5" style="padding:0;border-bottom:1px solid var(--border)">
+        <div style="background:var(--bg3);padding:.5rem .75rem .5rem 1.5rem">
+          <table style="width:100%;font-size:11px;border-collapse:collapse">
+            <thead><tr>
+              <th style="text-align:left;padding:3px 6px;color:var(--text3);font-weight:500">Компонент</th>
+              <th style="text-align:right;padding:3px 6px;color:var(--text3);font-weight:500">Ед.</th>
+              <th style="text-align:right;padding:3px 6px;color:var(--text3);font-weight:500">Кол-во</th>
+              <th style="text-align:right;padding:3px 6px;color:var(--text3);font-weight:500">Цена/ед</th>
+              <th style="text-align:right;padding:3px 6px;color:var(--text3);font-weight:500">Сумма</th>
+              <th style="text-align:right;padding:3px 6px;color:var(--text3);font-weight:500">Доля</th>
+              <th style="padding:3px 6px;color:var(--text3);font-weight:500">Источник</th>
+            </tr></thead>
+            <tbody>${renderProdTree(item.tree, cost)}</tbody>
+            <tfoot><tr>
+              <td colspan="4" style="padding:4px 6px;border-top:1px solid var(--border);font-weight:600;color:var(--text2)">Итого себестоимость/ед:</td>
+              <td style="text-align:right;padding:4px 6px;border-top:1px solid var(--border);font-weight:600;font-family:var(--mono);color:var(--accent)">${fmt(cost)} ₽</td>
+              <td colspan="2" style="border-top:1px solid var(--border)"></td>
+            </tr></tfoot>
+          </table>
+        </div>
+      </td></tr>`;
+    }
+    return html;
   }).join('');
 
   const grandTotal = P.items.reduce((s, i) => s + (i.cost||0)*i.qty, 0);
@@ -2166,8 +2213,39 @@ function renderProdList() {
   }
 }
 
-function calcProduction() {
-  if (!P.items.length) { alert('Добавьте полуфабрикаты в список'); return; }
+function renderProdTree(nodes, total, depth) {
+  depth = depth || 0;
+  const srcL = {purchase:'закупки',stock:'остатки',manual:'вручную',pricebook:'справочник★',alias:'аналог→',none:''};
+  return (nodes||[]).map(n => {
+    const isSemi = n.children && n.children.length;
+    const ind = depth * 14;
+    const pct = total > 0 ? (n.cost/total*100) : 0;
+    const unitCost = n.qty > 0 ? n.cost/n.qty : 0;
+    const icon = isSemi ? '📁' : (n.hasPrice ? '●' : '○');
+    const iconColor = isSemi ? 'var(--text3)' : (n.hasPrice ? 'var(--green)' : 'var(--red)');
+    let row = `<tr style="${isSemi?'background:rgba(79,142,247,.04)':''}">
+      <td style="padding:3px 6px;padding-left:${6+ind}px;color:${isSemi?'#c0c8dc':'#9aa3b8'}">
+        <span style="color:${iconColor};margin-right:4px;font-size:8px">${icon}</span>
+        ${n.name}
+        ${n.leaf&&!n.hasPrice?'<span class="badge badge-amber" style="font-size:9px;margin-left:3px">нет цены</span>':''}
+        ${isSemi?'<span class="badge badge-blue" style="font-size:9px;margin-left:3px">п/ф</span>':''}
+      </td>
+      <td style="text-align:right;padding:3px 6px;color:#7a8299">${n.unit||'—'}</td>
+      <td style="text-align:right;padding:3px 6px;color:#9aa3b8">${n.qty}</td>
+      <td style="text-align:right;padding:3px 6px;color:#9aa3b8;font-family:var(--mono)">${unitCost>0?fmt(unitCost):'—'}</td>
+      <td style="text-align:right;padding:3px 6px;font-family:var(--mono);font-weight:${depth===0?'500':'400'};color:${n.cost>0?'#c0c8dc':'#5a6275'}">${n.cost>0?fmt(n.cost):'—'}</td>
+      <td style="text-align:right;padding:3px 6px;color:#7a8299">${pct>0.01?pct.toFixed(1)+'%':'—'}</td>
+      <td style="padding:3px 6px;font-size:10px;color:var(--text3)">${n.leaf&&n.src?(srcL[n.src]||''):''}
+        ${n.leaf?`<button class="btn btn-sm btn-ghost" style="font-size:9px;padding:1px 4px;color:${n.hasPrice?'var(--text3)':'var(--amber)'}" onclick="openMatPopup(${JSON.stringify(n.name)},this)">${n.hasPrice?'✎':'+ цена'}</button>`:''}
+      </td>
+    </tr>`;
+    if (isSemi) row += renderProdTree(n.children, total, depth+1);
+    return row;
+  }).join('');
+}
+
+function calcProduction(silent) {
+  if (!P.items.length) { if(!silent) alert('Добавьте полуфабрикаты в список'); return; }
   if (!Object.keys(S.specs).length) { alert('Загрузите спецификации'); return; }
 
   // Aggregate materials across all items
@@ -2178,6 +2256,7 @@ function calcProduction() {
     item.cost = r.cost;
     item.full = r.full;
     item.missing = r.missing;
+    item.tree = r.tree; // сохраняем дерево для детализации
 
     // Walk tree and accumulate materials multiplied by item qty
     function walkTree(nodes, multiplier) {
@@ -2232,20 +2311,28 @@ function calcProduction() {
     const unitPrice = m.qty > 0 ? m.cost / m.qty : 0;
     const parents = [...m.parents].slice(0, 3).join(', ') + (m.parents.size > 3 ? '...' : '');
     const rowBg = !m.cost ? 'background:var(--amber-bg)' : '';
+    const safeN = JSON.stringify(m.name);
+    const srcColors = {purchase:'var(--accent)',stock:'var(--green)',manual:'var(--amber)',pricebook:'var(--amber)',alias:'var(--green)',none:'var(--red)'};
+    const srcColor = srcColors[m.src] || 'var(--text2)';
     return `<tr style="${rowBg}">
       <td>${m.name}${!m.cost ? ' <span class="badge badge-amber" style="font-size:10px">нет цены</span>' : ''}</td>
       <td class="r" style="color:var(--text2)">${m.unit||'—'}</td>
       <td class="r" style="font-weight:500">${m.qty % 1 === 0 ? m.qty : m.qty.toFixed(3)}</td>
-      <td class="r">${unitPrice ? fmt(unitPrice) : '—'}</td>
+      <td class="r">
+        <button class="btn btn-sm btn-ghost" style="font-size:12px;padding:2px 8px;color:${unitPrice?'var(--text)':'var(--amber)'};font-family:var(--mono)"
+          onclick="openMatPopup(${safeN},this)">
+          ${unitPrice ? fmt(unitPrice) : '+ цена'} ${unitPrice?'✎':''}
+        </button>
+      </td>
       <td class="r" style="font-weight:${pct>10?'500':'400'}">${m.cost ? fmt(m.cost) : '—'}</td>
       <td class="r" style="color:var(--text2)">${pct > 0 ? pct.toFixed(1)+'%' : '—'}</td>
-      <td style="font-size:11px;color:var(--text2)">${srcLabel[m.src]||'—'}</td>
+      <td style="font-size:11px;color:${srcColor}">${srcLabel[m.src]||'<span style="color:var(--red)">нет цены</span>'}</td>
       <td style="font-size:11px;color:var(--text3)">${parents}</td>
     </tr>`;
   }).join('') || '<tr><td colspan="8" class="no-data" style="padding:1.5rem">Нет данных</td></tr>';
 
-  // Scroll to results
-  document.getElementById('prod-result').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  // Scroll to results (только при ручном запуске)
+  if (!silent) document.getElementById('prod-result').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 function exportProduction() {
