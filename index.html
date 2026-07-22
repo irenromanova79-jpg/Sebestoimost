@@ -188,7 +188,7 @@ select:focus{outline:none;border-color:var(--accent)}
   <!-- Topbar -->
   <header class="topbar">
     <div class="logo">cost<span>.</span>calc</div>
-    <div style="font-size:12px;color:var(--text3);font-family:var(--mono)">Калькулятор себестоимости мебели <span style="color:#7eb3ff">v3.3</span></div>
+    <div style="font-size:12px;color:var(--text3);font-family:var(--mono)">Калькулятор себестоимости мебели <span style="color:#7eb3ff">v3.7</span></div>
     <div class="topbar-right">
       <span id="top-status" style="font-size:11px;color:var(--text3);font-family:var(--mono)"></span>
       <button class="btn btn-sm" onclick="runCalc()" id="btn-recalc" style="display:none">↺ Обновить расчёт</button>
@@ -225,6 +225,9 @@ select:focus{outline:none;border-color:var(--accent)}
     <div class="nav-item" data-tab="report">
       <span class="nav-icon">◈</span> Отчёт
     </div>
+    <div class="nav-item" data-tab="channels">
+      <span class="nav-icon">🛒</span> Каналы продаж
+    </div>
     <div class="nav-sep"></div>
     <div class="nav-label">Экспорт</div>
     <div class="nav-item" onclick="exportCSV()">
@@ -237,6 +240,19 @@ select:focus{outline:none;border-color:var(--accent)}
 
     <!-- UPLOAD -->
     <div id="tab-upload" class="section active">
+      <div style="background:linear-gradient(135deg,rgba(34,197,94,.1),rgba(79,142,247,.08));border:1px solid rgba(34,197,94,.3);border-radius:var(--r2);padding:1rem 1.25rem;margin-bottom:1rem;display:flex;align-items:center;gap:1rem;flex-wrap:wrap">
+        <div style="flex:1;min-width:280px">
+          <div style="font-size:14px;font-weight:600;margin-bottom:.2rem">💾 Резервная копия всех данных</div>
+          <div style="font-size:12px;color:var(--text2)">Справочник цен, свои спецификации и версии сохраняются в браузере. <b style="color:var(--amber)">Перед заливкой на GitHub сохраните копию в файл</b> — тогда данные не потеряются. Восстановление — одним файлом.</div>
+        </div>
+        <div style="display:flex;gap:.5rem">
+          <button class="btn btn-primary" onclick="backupAll()">💾 Сохранить всё в файл</button>
+          <div class="upload-zone" onclick="document.getElementById('f-restore').click()" style="padding:.5rem 1rem;display:inline-flex;align-items:center;gap:.5rem;border-style:solid;cursor:pointer">
+            <span>📂</span><span style="font-size:13px">Восстановить из файла</span>
+          </div>
+          <input type="file" id="f-restore" accept=".json" style="display:none" onchange="restoreAll(this)">
+        </div>
+      </div>
       <div class="alert alert-blue">
         <span>ℹ</span>
         <div>Загрузите три файла из 1С:УНФ. Порядок не важен. После загрузки нажмите <strong>▶ Рассчитать</strong> в шапке.</div>
@@ -338,6 +354,17 @@ select:focus{outline:none;border-color:var(--accent)}
       <div id="calc-empty" class="empty"><span class="empty-icon">🧮</span>Загрузите данные и нажмите «Рассчитать»</div>
       <div id="calc-content" style="display:none">
         <div class="metrics" id="calc-metrics"></div>
+        <div style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;padding:.6rem .85rem;background:var(--bg3);border:1px solid var(--border);border-radius:var(--r);margin-bottom:.75rem">
+          <span style="font-size:12px;color:var(--text2);font-weight:500">📎 Нормативная себестоимость:</span>
+          <button class="btn btn-sm btn-primary" onclick="saveNormVersion()">💾 Сохранить версию</button>
+          <select id="norm-version-select" style="min-width:220px" onchange="onNormVersionPick()">
+            <option value="">— выбрать сохранённую версию —</option>
+          </select>
+          <button class="btn btn-sm" onclick="exportNormCost()">↓ Выгрузить в xlsx</button>
+          <span id="norm-total-cost" style="font-size:12px;font-weight:600;color:var(--accent);margin-left:.5rem"></span>
+          <span class="toolbar-spacer"></span>
+          <span id="norm-version-info" style="font-size:11px;color:var(--text3)"></span>
+        </div>
         <div class="toolbar">
           <input type="search" class="inp" style="width:240px" placeholder="Поиск модели..." id="calc-q" oninput="renderCalcTable()">
           <select id="calc-filter" onchange="renderCalcTable()">
@@ -576,6 +603,79 @@ select:focus{outline:none;border-color:var(--accent)}
       </div>
     </div>
 
+    <!-- CHANNELS -->
+    <div id="tab-channels" class="section">
+      <div class="alert alert-blue"><span>ℹ</span><div>Себестоимость по каналам продаж. Загрузите файл продаж с группировкой по проектам/каналам — приложение возьмёт нормативную себестоимость (из расчёта по спецификациям) и посчитает себестоимость и маржу в разрезе каналов.</div></div>
+
+      <div class="card" style="margin-bottom:1rem">
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.75rem">
+          <div>
+            <div class="card-title" style="margin-bottom:.25rem">Загрузить продажи по каналам</div>
+            <div style="font-size:12px;color:var(--text2)">Формат 1С: строка-заголовок канала (Документ.Проект), под ней номенклатуры с кол-вом и выручкой</div>
+          </div>
+          <div style="display:flex;gap:.5rem;align-items:center">
+            <div class="upload-zone" onclick="document.getElementById('f-channels').click()" style="padding:.5rem 1rem;display:inline-flex;align-items:center;gap:.5rem">
+              <span>🛒</span><span style="font-size:12px">Выбрать файл xlsx</span>
+            </div>
+            <input type="file" id="f-channels" accept=".xlsx,.xls,.csv" style="display:none" onchange="loadChannels(this)">
+          </div>
+        </div>
+        <div id="ch-file-status" style="margin-top:.5rem"></div>
+        <div style="margin-top:.75rem;padding-top:.75rem;border-top:1px solid var(--border);display:flex;align-items:center;gap:.75rem">
+          <span style="font-size:12px;color:var(--text2)">Источник нормативной себестоимости:</span>
+          <select id="ch-norm-source" style="min-width:260px" onchange="renderChannels()">
+            <option value="current">Текущий расчёт</option>
+          </select>
+          <span style="font-size:11px;color:var(--text3)">версии нормативной себестоимости сохраняются во вкладке «Расчёт»</span>
+          <span class="toolbar-spacer"></span>
+          <button class="btn btn-primary btn-sm" onclick="renderChannels()">▶ Рассчитать по каналам</button>
+        </div>
+      </div>
+
+      <div id="ch-result" style="display:none">
+        <div class="metrics" id="ch-metrics" style="margin-bottom:1rem"></div>
+
+        <div style="display:flex;gap:.5rem;margin-bottom:.75rem;align-items:center">
+          <span style="font-size:13px;font-weight:500">Сводка по каналам</span>
+          <span class="toolbar-spacer"></span>
+          <button class="btn btn-sm" onclick="exportChannels()">↓ Скачать xlsx</button>
+        </div>
+        <div class="card" style="padding:0;overflow:hidden;margin-bottom:1.25rem">
+          <table>
+            <thead><tr>
+              <th>Канал / Проект</th>
+              <th class="r">Позиций</th>
+              <th class="r">Кол-во</th>
+              <th class="r">Выручка, ₽</th>
+              <th class="r">Себестоимость, ₽</th>
+              <th class="r">Маржа, ₽</th>
+              <th class="r">Маржа, %</th>
+              <th class="r">Доля выручки</th>
+            </tr></thead>
+            <tbody id="ch-summary-body"></tbody>
+          </table>
+        </div>
+
+        <div style="font-size:13px;font-weight:500;margin-bottom:.5rem">Детализация по позициям</div>
+        <div class="card" style="padding:0;overflow:hidden">
+          <table>
+            <thead><tr>
+              <th>Канал</th>
+              <th>Номенклатура</th>
+              <th class="r">Кол-во</th>
+              <th class="r">Выручка, ₽</th>
+              <th class="r">Себест/ед, ₽</th>
+              <th class="r">Себест итого, ₽</th>
+              <th class="r">Маржа, ₽</th>
+              <th class="r">Маржа, %</th>
+              <th>Статус</th>
+            </tr></thead>
+            <tbody id="ch-detail-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
   </main>
 
 </div>
@@ -709,6 +809,7 @@ const S = {
   // alias: если задан, цена берётся от алиаса (синонима)
   specs: {},
   userSpecs: {},   // спецификации созданные вручную (localStorage)
+  normVersions: {}, // версии нормативной себестоимости (localStorage)
   allMaterials: new Set(),
   calcRows: [],
   ready: { sales: false, prices: false, specs: false }
@@ -720,6 +821,7 @@ const LS = {
   SPECS:     'costcalc_specs',
   PRICES:    'costcalc_prices',
   USERSPECS: 'costcalc_userspecs',
+  NORMVERS:  'costcalc_normversions',
 };
 
 function lsSave(key, data) {
@@ -878,6 +980,7 @@ function applyUserSpecs() {
 // Init on load — всё в try-catch чтобы ошибка не блокировала приложение
 try { pbLoad(); } catch(e) { console.warn('pbLoad error:', e); S.pricebook = {}; }
 try { userSpecsLoad(); } catch(e) { console.warn('userSpecsLoad error:', e); S.userSpecs = {}; }
+try { normVersLoad(); refreshNormVersionUI(); } catch(e) { console.warn('normVersLoad error:', e); S.normVersions = {}; }
 
 let specsRestored = false, pricesRestored = false;
 try { specsRestored = specsLoad(); } catch(e) { console.warn('specsLoad error:', e); S.specs = {}; S.allMaterials = new Set(); S.ready.specs = false; }
@@ -1203,6 +1306,8 @@ function runCalc(stayOnTab) {
   renderReport();
   renderPricesEditor();
   if (Object.keys(S.pricebook).length) renderPricebook();
+  try { refreshNormVersionUI(); } catch(e) {}
+  try { if (C.rows && C.rows.length) renderChannels(); } catch(e) {}
   // After calc: show Refresh, hide Calculate
   document.getElementById('btn-calc').style.display = 'none';
   document.getElementById('btn-recalc').style.display = 'inline-flex';
@@ -2808,6 +2913,432 @@ function exportOprikhodovanie() {
   XLSX.writeFile(wb, `oprikhodovanie_${date}.xlsx`);
 }
 
+// ══════════════════════════════════════════════════════════════════════════
+// НОРМАТИВНАЯ СЕБЕСТОИМОСТЬ + ВЕРСИИ + КАНАЛЫ ПРОДАЖ
+// ══════════════════════════════════════════════════════════════════════════
+
+// Собрать нормативную себестоимость по каждой номенклатуре из текущего расчёта.
+// Возвращает { normKey: {nom, char, cost, full} } — cost это себест/ед.
+function buildNormCost() {
+  const map = {};
+  // Если расчёт уже выполнен — берём из calcRows (там есть себест/ед)
+  if (S.calcRows && S.calcRows.length) {
+    S.calcRows.forEach(r => {
+      const k = norm(r.nom) + '|' + norm(r.char || '');
+      if (!map[k] || (r.cost > 0 && !map[k].cost)) {
+        map[k] = { nom: r.nom, char: r.char || '', cost: r.cost || 0, full: r.full };
+      }
+    });
+  }
+  // Дополняем: для всех спецификаций считаем себестоимость (даже если не продавалось)
+  Object.values(S.specs).forEach(sp => {
+    const k = norm(sp.nom) + '|' + norm(sp.char || '');
+    if (map[k]) return;
+    const cc = calcCost(sp.nom, sp.char || '', new Set(), 0);
+    map[k] = { nom: sp.nom, char: sp.char || '', cost: cc.cost || 0, full: cc.full };
+  });
+  return map;
+}
+
+// Найти нормативную себестоимость номенклатуры (по имени, характеристика опц.)
+function lookupNormCost(normMap, nom, char) {
+  const n = norm(nom), c = norm(char || '');
+  if (normMap[n + '|' + c]) return normMap[n + '|' + c];
+  if (normMap[n + '|']) return normMap[n + '|'];
+  for (const k of Object.keys(normMap)) {
+    if (k.startsWith(n + '|')) return normMap[k];
+  }
+  return null;
+}
+
+// ── Версии нормативной себестоимости ──────────────────────────────────────
+function normVersLoad() {
+  const v = lsLoad(LS.NORMVERS);
+  S.normVersions = (v && typeof v === 'object') ? v : {};
+}
+function normVersSave() { lsSave(LS.NORMVERS, S.normVersions); }
+
+function saveNormVersion() {
+  if (!S.calcRows || !S.calcRows.length) {
+    if (!Object.keys(S.specs).length) { alert('Сначала загрузите спецификации и выполните расчёт'); return; }
+  }
+  const name = prompt('Название версии нормативной себестоимости:\n(например «Июнь 2026» или «После роста цен»)',
+    'Версия ' + new Date().toLocaleDateString('ru-RU'));
+  if (!name || !name.trim()) return;
+
+  const normMap = buildNormCost();
+  const id = 'v' + Date.now();
+  if (!S.normVersions) S.normVersions = {};
+  S.normVersions[id] = {
+    name: name.trim(),
+    date: new Date().toLocaleString('ru-RU'),
+    cost: normMap  // снимок нормативной себестоимости
+  };
+  normVersSave();
+  refreshNormVersionUI();
+  alert('Версия «' + name.trim() + '» сохранена (' + Object.keys(normMap).length + ' позиций).');
+}
+
+function deleteNormVersion(id) {
+  if (!S.normVersions || !S.normVersions[id]) return;
+  if (!confirm('Удалить версию «' + S.normVersions[id].name + '»?')) return;
+  delete S.normVersions[id];
+  normVersSave();
+  refreshNormVersionUI();
+}
+
+function onNormVersionPick() {
+  const sel = document.getElementById('norm-version-select');
+  const id = sel.value;
+  const info = document.getElementById('norm-version-info');
+  if (!id || !S.normVersions[id]) { info.textContent = ''; return; }
+  const v = S.normVersions[id];
+  const cnt = Object.keys(v.cost || {}).length;
+  info.innerHTML = `сохранена ${v.date} · ${cnt} позиций <button class="btn btn-sm btn-ghost" style="color:var(--red);font-size:10px;padding:1px 6px;margin-left:6px" onclick="deleteNormVersion('${id}')">🗑 удалить</button>`;
+}
+
+function refreshNormVersionUI() {
+  // Обновляем оба выпадающих списка: на вкладке расчёта и на вкладке каналов
+  const versions = S.normVersions || {};
+  const opts = Object.entries(versions)
+    .sort((a,b) => b[0].localeCompare(a[0]))
+    .map(([id, v]) => `<option value="${id}">${v.name} (${v.date})</option>`).join('');
+
+  const sel1 = document.getElementById('norm-version-select');
+  if (sel1) {
+    const cur = sel1.value;
+    sel1.innerHTML = '<option value="">— выбрать сохранённую версию —</option>' + opts;
+    sel1.value = cur;
+  }
+  const sel2 = document.getElementById('ch-norm-source');
+  if (sel2) {
+    const cur = sel2.value;
+    sel2.innerHTML = '<option value="current">Текущий расчёт</option>' + opts;
+    sel2.value = cur;
+  }
+  onNormVersionPick();
+  // Показываем общую себестоимость продаж одной цифрой
+  const tc = document.getElementById('norm-total-cost');
+  if (tc && S.calcRows && S.calcRows.length) {
+    const totCost = S.calcRows.reduce((s,r)=>s+(r.totalCost||0),0);
+    tc.textContent = 'Себестоимость продаж: ' + fmt(totCost) + ' ₽';
+  } else if (tc) {
+    tc.textContent = '';
+  }
+}
+
+// ── Экспорт нормативной себестоимости ─────────────────────────────────────
+function exportNormCost() {
+  const normMap = buildNormCost();
+  const rows = Object.values(normMap)
+    .sort((a,b) => a.nom.localeCompare(b.nom,'ru'));
+  if (!rows.length) { alert('Нет данных. Загрузите спецификации.'); return; }
+
+  const wb = XLSX.utils.book_new();
+
+  // ── Лист «Итого» — одна цифра себестоимости продаж ──
+  if (S.calcRows && S.calcRows.length) {
+    const totCost = S.calcRows.reduce((s,r)=>s+(r.totalCost||0),0);
+    const totRev  = S.calcRows.reduce((s,r)=>s+(r.rev||0),0);
+    const totMargin = totRev - totCost;
+    const mp = totRev > 0 ? totMargin/totRev*100 : 0;
+    const wsSum = XLSX.utils.aoa_to_sheet([
+      ['Показатель', 'Значение'],
+      ['Себестоимость продаж, ₽', +totCost.toFixed(2)],
+      ['Выручка, ₽', +totRev.toFixed(2)],
+      ['Маржа, ₽', +totMargin.toFixed(2)],
+      ['Маржа, %', +mp.toFixed(1)],
+      ['Позиций', S.calcRows.length],
+    ]);
+    wsSum['!cols'] = [{wch:30},{wch:20}];
+    ['B2','B3','B4'].forEach(a => { if (wsSum[a]) wsSum[a].z = '#,##0.00'; });
+    if (wsSum['B5']) wsSum['B5'].z = '0.0"%"';
+    XLSX.utils.book_append_sheet(wb, wsSum, 'Итого');
+  }
+
+  // ── Лист 1: Общая — все номенклатуры со спецификацией ──
+  const hdr1 = ['Номенклатура', 'Характеристика', 'Нормативная себест/ед, ₽', 'Статус'];
+  const data1 = rows.map(r => [r.nom, r.char || '', +(r.cost||0).toFixed(2), r.full ? 'полный' : 'неполный']);
+  const ws1 = XLSX.utils.aoa_to_sheet([hdr1, ...data1]);
+  ws1['!cols'] = [{wch:45},{wch:28},{wch:24},{wch:14}];
+  data1.forEach((_, ri) => { const c = ws1['C'+(ri+2)]; if (c) c.z = '#,##0.00'; });
+  XLSX.utils.book_append_sheet(wb, ws1, 'Общая');
+
+  // ── Лист 2: По товарам из продаж — только проданное, с кол-вом и суммой ──
+  if (S.calcRows && S.calcRows.length) {
+    const hdr2 = ['Номенклатура', 'Характеристика', 'Кол-во', 'Себест/ед, ₽', 'Себест итого, ₽', 'Выручка, ₽', 'Статус'];
+    const data2 = S.calcRows
+      .slice()
+      .sort((a,b) => (b.totalCost||0) - (a.totalCost||0))
+      .map(r => [
+        r.nom, r.char || '', r.qty,
+        +(r.cost||0).toFixed(2),
+        +(r.totalCost||0).toFixed(2),
+        +(r.rev||0).toFixed(2),
+        !r.hasSpec ? 'нет спецификации' : (r.full ? 'полный' : 'неполный')
+      ]);
+    // Итоговая строка
+    const totQty = S.calcRows.reduce((s,r)=>s+(r.qty||0),0);
+    const totCost = S.calcRows.reduce((s,r)=>s+(r.totalCost||0),0);
+    const totRev = S.calcRows.reduce((s,r)=>s+(r.rev||0),0);
+    data2.push(['ИТОГО', '', totQty, '', +totCost.toFixed(2), +totRev.toFixed(2), '']);
+
+    const ws2 = XLSX.utils.aoa_to_sheet([hdr2, ...data2]);
+    ws2['!cols'] = [{wch:45},{wch:28},{wch:9},{wch:14},{wch:16},{wch:14},{wch:16}];
+    data2.forEach((_, ri) => {
+      ['D','E','F'].forEach(col => { const c = ws2[col+(ri+2)]; if (c && typeof c.v === 'number') c.z = '#,##0.00'; });
+      const q = ws2['C'+(ri+2)]; if (q && typeof q.v === 'number') q.z = '#,##0';
+    });
+    XLSX.utils.book_append_sheet(wb, ws2, 'По товарам из продаж');
+  }
+
+  const date = new Date().toLocaleDateString('ru-RU').replace(/\./g,'-');
+  XLSX.writeFile(wb, `normativnaya_sebestoimost_${date}.xlsx`);
+}
+
+// ── Каналы продаж ─────────────────────────────────────────────────────────
+// C.rows: [{channel, nom, qty, rev}]
+const C = { rows: [], fname: '' };
+
+function loadChannels(inp) {
+  if (!inp.files[0]) return;
+  readXlsx(inp.files[0], rows => {
+    let hdr = -1;
+    for (let i = 0; i < Math.min(rows.length, 6); i++) {
+      const joined = (rows[i]||[]).map(c => String(c||'')).join(' ').toLowerCase();
+      if (joined.includes('проект') || joined.includes('номенклатур')) { hdr = i; break; }
+    }
+    if (hdr < 0) hdr = 0;
+
+    const num = v => { const n = parseFloat(String(v||'').replace(',','.').replace(/\s/g,'')); return isNaN(n) ? null : n; };
+
+    // Собираем все содержательные строки
+    const raw = [];
+    for (let i = hdr + 1; i < rows.length; i++) {
+      const r = rows[i]; if (!r) continue;
+      const c0 = String(r[0]||'').trim();
+      const c1 = num(r[1]);
+      const c2 = num(r[2]);
+      if (!c0 && c1 === null && c2 === null) continue;
+      if (c0.toLowerCase().startsWith('итого') || c0.toLowerCase().startsWith('всего')) continue;
+      // Название канала: если c0 пустой — берём код из c1; иначе c0
+      const label = c0 || (r[1] != null ? String(r[1]).trim() : '');
+      raw.push({ label, c0, qty: c1, rev: c2 });
+    }
+
+    // Определяем заголовки каналов: строка, чья выручка ≈ сумме выручек
+    // последующих строк (до следующего такого заголовка).
+    const isHeader = new Array(raw.length).fill(false);
+    for (let i = 0; i < raw.length; i++) {
+      if (raw[i].rev == null || raw[i].rev <= 0) continue;
+      let sum = 0, j = i + 1;
+      while (j < raw.length) {
+        // накапливаем пока сумма не превысила выручку строки-кандидата
+        if (raw[j].rev != null) sum += raw[j].rev;
+        if (Math.abs(sum - raw[i].rev) < 1) { isHeader[i] = true; break; }
+        if (sum > raw[i].rev + 1) break;
+        j++;
+      }
+    }
+    // Первая строка почти всегда заголовок (проект без c0)
+    if (raw.length && !raw[0].c0) isHeader[0] = true;
+
+    const parsed = [];
+    let currentChannel = 'Без канала';
+    for (let i = 0; i < raw.length; i++) {
+      if (isHeader[i]) { currentChannel = raw[i].label || ('Канал ' + (parsed.length+1)); continue; }
+      // Пропускаем строки без количества и без выручки (подзаголовки типа «Номенклатура»)
+      if (raw[i].qty == null && raw[i].rev == null) continue;
+      if (raw[i].c0) {
+        parsed.push({ channel: currentChannel, nom: raw[i].c0, qty: raw[i].qty || 0, rev: raw[i].rev || 0 });
+      }
+    }
+
+    C.rows = parsed;
+    C.fname = inp.files[0].name;
+    const chCount = new Set(parsed.map(p => p.channel)).size;
+    document.getElementById('ch-file-status').innerHTML =
+      `<div class="file-ok"><i class="ti ti-check"></i><span style="flex:1">${C.fname}</span><span style="font-weight:500">${parsed.length} позиций · ${chCount} канала</span></div>`;
+    renderChannels();
+  });
+}
+
+function renderChannels() {
+  if (!C.rows.length) { return; }
+
+  // Источник нормативной себестоимости
+  const srcSel = document.getElementById('ch-norm-source');
+  const srcVal = srcSel ? srcSel.value : 'current';
+  let normMap;
+  if (srcVal && srcVal !== 'current' && S.normVersions && S.normVersions[srcVal]) {
+    normMap = S.normVersions[srcVal].cost;
+  } else {
+    normMap = buildNormCost();
+  }
+
+  // Считаем по позициям
+  const detail = C.rows.map(r => {
+    const nc = lookupNormCost(normMap, r.nom, '');
+    const costPer = nc ? nc.cost : 0;
+    const costTotal = costPer * r.qty;
+    const margin = r.rev - costTotal;
+    const mp = r.rev > 0 ? margin / r.rev * 100 : 0;
+    const status = !nc ? 'нет норматива' : (nc.full ? 'полный' : 'неполный');
+    return { ...r, costPer, costTotal, margin, mp, status };
+  });
+
+  // Группировка по каналам
+  const byCh = {};
+  detail.forEach(d => {
+    if (!byCh[d.channel]) byCh[d.channel] = { channel: d.channel, cnt:0, qty:0, rev:0, cost:0 };
+    const g = byCh[d.channel];
+    g.cnt++; g.qty += d.qty; g.rev += d.rev; g.cost += d.costTotal;
+  });
+  const channels = Object.values(byCh).map(g => ({
+    ...g, margin: g.rev - g.cost, mp: g.rev>0 ? (g.rev-g.cost)/g.rev*100 : 0
+  })).sort((a,b) => b.rev - a.rev);
+
+  const totRev = channels.reduce((s,c)=>s+c.rev,0);
+  const totCost = channels.reduce((s,c)=>s+c.cost,0);
+  const totMargin = totRev - totCost;
+
+  document.getElementById('ch-result').style.display = 'block';
+
+  // Метрики
+  document.getElementById('ch-metrics').innerHTML = `
+    <div class="metric"><div class="metric-label">Каналов</div><div class="metric-value">${channels.length}</div></div>
+    <div class="metric"><div class="metric-label">Выручка</div><div class="metric-value">${fmtM(totRev)}</div></div>
+    <div class="metric"><div class="metric-label">Себестоимость</div><div class="metric-value">${fmtM(totCost)}</div></div>
+    <div class="metric"><div class="metric-label">Маржа</div><div class="metric-value ${totMargin>=0?'green':'red'}">${fmtM(totMargin)}</div><div class="metric-sub">${totRev?(totMargin/totRev*100).toFixed(1):0}%</div></div>`;
+
+  // Сводка по каналам
+  document.getElementById('ch-summary-body').innerHTML = channels.map(c => `
+    <tr>
+      <td style="font-weight:500">${c.channel}</td>
+      <td class="r" style="color:var(--text2)">${c.cnt}</td>
+      <td class="r">${fmt(c.qty)}</td>
+      <td class="r">${fmt(c.rev)}</td>
+      <td class="r">${fmt(c.cost)}</td>
+      <td class="r" style="color:${c.margin>=0?'var(--green)':'var(--red)'};font-weight:500">${fmt(c.margin)}</td>
+      <td class="r" style="color:${c.mp>=0?'var(--green)':'var(--red)'}">${c.mp.toFixed(1)}%</td>
+      <td class="r" style="color:var(--text2)">${totRev?(c.rev/totRev*100).toFixed(1):0}%</td>
+    </tr>`).join('') +
+    `<tr style="background:var(--bg3);font-weight:600;border-top:2px solid var(--accent)">
+      <td>ИТОГО</td><td class="r">${detail.length}</td><td class="r">${fmt(channels.reduce((s,c)=>s+c.qty,0))}</td>
+      <td class="r">${fmt(totRev)}</td><td class="r">${fmt(totCost)}</td>
+      <td class="r" style="color:${totMargin>=0?'var(--green)':'var(--red)'}">${fmt(totMargin)}</td>
+      <td class="r">${totRev?(totMargin/totRev*100).toFixed(1):0}%</td><td class="r">100%</td>
+    </tr>`;
+
+  // Детализация
+  document.getElementById('ch-detail-body').innerHTML = detail.map(d => `
+    <tr style="${d.status==='нет норматива'?'background:var(--amber-bg)':''}">
+      <td style="color:var(--text2);font-size:12px">${d.channel}</td>
+      <td>${d.nom}</td>
+      <td class="r">${fmt(d.qty)}</td>
+      <td class="r">${fmt(d.rev)}</td>
+      <td class="r" style="color:var(--text2)">${d.costPer?fmt(d.costPer):'—'}</td>
+      <td class="r">${d.costTotal?fmt(d.costTotal):'—'}</td>
+      <td class="r" style="color:${d.margin>=0?'var(--green)':'var(--red)'}">${fmt(d.margin)}</td>
+      <td class="r" style="color:${d.mp>=0?'var(--green)':'var(--red)'}">${d.mp.toFixed(1)}%</td>
+      <td style="font-size:11px;color:${d.status==='полный'?'var(--green)':(d.status==='неполный'?'var(--amber)':'var(--red)')}">${d.status}</td>
+    </tr>`).join('') || '<tr><td colspan="9" class="no-data" style="padding:1.5rem">Нет данных</td></tr>';
+
+  C._detail = detail;
+  C._channels = channels;
+}
+
+function exportChannels() {
+  if (!C._channels || !C._channels.length) { alert('Сначала рассчитайте по каналам'); return; }
+  const wb = XLSX.utils.book_new();
+
+  // Лист 1: сводка
+  const totRev = C._channels.reduce((s,c)=>s+c.rev,0);
+  const h1 = ['Канал/Проект','Позиций','Кол-во','Выручка, ₽','Себестоимость, ₽','Маржа, ₽','Маржа, %','Доля выручки, %'];
+  const d1 = C._channels.map(c => [c.channel, c.cnt, c.qty, Math.round(c.rev), Math.round(c.cost), Math.round(c.margin), +c.mp.toFixed(1), +(totRev?c.rev/totRev*100:0).toFixed(1)]);
+  const ws1 = XLSX.utils.aoa_to_sheet([h1, ...d1]);
+  ws1['!cols'] = [{wch:30},{wch:9},{wch:10},{wch:16},{wch:18},{wch:16},{wch:10},{wch:14}];
+  XLSX.utils.book_append_sheet(wb, ws1, 'Сводка по каналам');
+
+  // Лист 2: детализация
+  const h2 = ['Канал','Номенклатура','Кол-во','Выручка, ₽','Себест/ед, ₽','Себест итого, ₽','Маржа, ₽','Маржа, %','Статус'];
+  const d2 = C._detail.map(d => [d.channel, d.nom, d.qty, Math.round(d.rev), +(d.costPer||0).toFixed(2), Math.round(d.costTotal), Math.round(d.margin), +d.mp.toFixed(1), d.status]);
+  const ws2 = XLSX.utils.aoa_to_sheet([h2, ...d2]);
+  ws2['!cols'] = [{wch:20},{wch:40},{wch:9},{wch:14},{wch:14},{wch:16},{wch:14},{wch:10},{wch:14}];
+  XLSX.utils.book_append_sheet(wb, ws2, 'Детализация');
+
+  const date = new Date().toLocaleDateString('ru-RU').replace(/\./g,'-');
+  XLSX.writeFile(wb, `sebestoimost_po_kanalam_${date}.xlsx`);
+}
+
+// ── Резервное копирование всех данных в один файл ─────────────────────────
+function backupAll() {
+  const backup = {
+    _type: 'cost.calc.backup',
+    _version: 'v3.7',
+    _date: new Date().toISOString(),
+    pricebook: S.pricebook || {},
+    userSpecs: S.userSpecs || {},
+    normVersions: S.normVersions || {},
+    // цены закупок тоже сохраняем — вдруг понадобятся
+    purchasePrices: S.purchasePrices || {},
+  };
+  const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  const date = new Date().toLocaleDateString('ru-RU').replace(/\./g,'-');
+  a.download = `cost-calc-backup_${date}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+
+  const pbCnt = Object.keys(S.pricebook||{}).length;
+  const usCnt = Object.keys(S.userSpecs||{}).length;
+  const nvCnt = Object.keys(S.normVersions||{}).length;
+  setTimeout(() => alert(`Резервная копия сохранена:\n• Справочник цен: ${pbCnt} позиций\n• Свои спецификации: ${usCnt}\n• Версии: ${nvCnt}\n\nХраните этот файл — из него можно всё восстановить.`), 100);
+}
+
+function restoreAll(inp) {
+  if (!inp.files[0]) return;
+  const r = new FileReader();
+  r.onload = e => {
+    try {
+      const b = JSON.parse(e.target.result);
+      if (b._type !== 'cost.calc.backup') {
+        if (!confirm('Файл не похож на резервную копию cost.calc. Всё равно попробовать восстановить?')) { inp.value=''; return; }
+      }
+      let restored = [];
+      if (b.pricebook && typeof b.pricebook === 'object') {
+        S.pricebook = b.pricebook; pbSave();
+        restored.push('справочник цен (' + Object.keys(b.pricebook).length + ')');
+      }
+      if (b.userSpecs && typeof b.userSpecs === 'object') {
+        S.userSpecs = b.userSpecs; userSpecsSave(); applyUserSpecs();
+        restored.push('спецификации (' + Object.keys(b.userSpecs).length + ')');
+      }
+      if (b.normVersions && typeof b.normVersions === 'object') {
+        S.normVersions = b.normVersions; normVersSave();
+        restored.push('версии (' + Object.keys(b.normVersions).length + ')');
+      }
+      if (b.purchasePrices && typeof b.purchasePrices === 'object' && Object.keys(b.purchasePrices).length && !Object.keys(S.purchasePrices||{}).length) {
+        S.purchasePrices = b.purchasePrices;
+        restored.push('цены закупок (' + Object.keys(b.purchasePrices).length + ')');
+      }
+      // Обновляем интерфейс
+      updatePbBadge();
+      try { refreshNormVersionUI(); } catch(_){}
+      try { renderPricebook(); } catch(_){}
+      try { renderPricesEditor(); } catch(_){}
+      if (S.calcRows && S.calcRows.length) runCalc(true);
+      alert('Восстановлено:\n• ' + (restored.join('\n• ') || 'нет данных') + '\n\nНажмите «Обновить расчёт» если нужно.');
+    } catch(err) {
+      alert('Ошибка чтения файла: ' + err.message);
+    }
+    inp.value = '';
+  };
+  r.readAsText(inp.files[0]);
+}
+
 function exportCSV() {
   if (!S.calcRows.length) { alert('Сначала выполните расчёт'); return; }
 
@@ -2901,7 +3432,7 @@ function exportCSV() {
   XLSX.writeFile(wb, `sebestoimost_${date}.xlsx`);
 }
 
-console.log('%c\u2713 cost.calc v3.3 \u2014 \u0444\u0430\u0439\u043b \u0437\u0430\u0433\u0440\u0443\u0436\u0435\u043d \u043f\u043e\u043b\u043d\u043e\u0441\u0442\u044c\u044e', 'color:#22c55e;font-weight:bold;font-size:14px');
+console.log('%c\u2713 cost.calc v3.7 \u2014 \u0444\u0430\u0439\u043b \u0437\u0430\u0433\u0440\u0443\u0436\u0435\u043d \u043f\u043e\u043b\u043d\u043e\u0441\u0442\u044c\u044e', 'color:#22c55e;font-weight:bold;font-size:14px');
 window.__CALC_OK__ = true;
 </script>
 </body>
