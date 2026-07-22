@@ -188,7 +188,7 @@ select:focus{outline:none;border-color:var(--accent)}
   <!-- Topbar -->
   <header class="topbar">
     <div class="logo">cost<span>.</span>calc</div>
-    <div style="font-size:12px;color:var(--text3);font-family:var(--mono)">Калькулятор себестоимости мебели <span style="color:#7eb3ff">v3.1</span></div>
+    <div style="font-size:12px;color:var(--text3);font-family:var(--mono)">Калькулятор себестоимости мебели <span style="color:#7eb3ff">v3.2</span></div>
     <div class="topbar-right">
       <span id="top-status" style="font-size:11px;color:var(--text3);font-family:var(--mono)"></span>
       <button class="btn btn-sm" onclick="runCalc()" id="btn-recalc" style="display:none">↺ Обновить расчёт</button>
@@ -1926,40 +1926,68 @@ function openMatPopup(matName, btnEl) {
   if (!S.pricebook[k]) S.pricebook[k] = { price: 0, unit: '', comment: '', alias: '' };
   const pb = S.pricebook[k];
 
-  // Fill popup fields
-  document.getElementById('mat-popup-title').textContent = 'Задать цену / аналог';
-  document.getElementById('mat-popup-name').textContent = matName;
-  document.getElementById('mat-popup-price').value = pb.price > 0 ? pb.price : '';
-  document.getElementById('mat-popup-alias').value = pb.alias || '';
+  // Пытаемся показать красивый попап. Если он по какой-то причине не работает
+  // (например файл открыт с диска file://), падаем на надёжный prompt().
+  let usedModal = false;
+  try {
+    const popup = document.getElementById('mat-popup');
+    const overlay = document.getElementById('mat-popup-overlay');
+    if (popup && overlay) {
+      document.getElementById('mat-popup-title').textContent = 'Задать цену / аналог';
+      document.getElementById('mat-popup-name').textContent = matName;
+      document.getElementById('mat-popup-price').value = pb.price > 0 ? pb.price : '';
+      document.getElementById('mat-popup-alias').value = pb.alias || '';
 
-  // Fill datalist
-  const dl = document.getElementById('mat-popup-datalist');
-  const allKnown = [...new Set([...S.allMaterials, ...Object.keys(S.purchasePrices), ...Object.keys(S.stockPrices)])].sort((a,b)=>a.localeCompare(b,'ru'));
-  dl.innerHTML = allKnown.map(n => `<option value="${n.replace(/"/g,'&quot;')}">`).join('');
+      const dl = document.getElementById('mat-popup-datalist');
+      const allKnown = [...new Set([...S.allMaterials, ...Object.keys(S.purchasePrices), ...Object.keys(S.stockPrices)])].sort((a,b)=>a.localeCompare(b,'ru'));
+      dl.innerHTML = allKnown.map(n => `<option value="${n.replace(/"/g,'&quot;')}">`).join('');
 
-  // Show overlay + popup
-  document.getElementById('mat-popup-overlay').style.display = 'block';
-  const popup = document.getElementById('mat-popup');
-  popup.style.display = 'block';
+      overlay.style.display = 'block';
+      popup.style.display = 'block';
+      popup.style.top = '50%';
+      popup.style.left = '50%';
+      popup.style.transform = 'translate(-50%, -50%)';
 
-  // Подпись кнопки спецификации
-  const lbl = document.getElementById('spec-btn-label');
-  if (lbl) {
-    const hasUser = S.userSpecs && (S.userSpecs[k + '|'] || S.userSpecs[k]);
-    const hasAny  = findSpec(matName, '');
-    lbl.textContent = hasUser ? 'Изменить спецификацию' : (hasAny ? 'Переопределить спецификацию' : 'Создать спецификацию');
+      const lbl = document.getElementById('spec-btn-label');
+      if (lbl) {
+        const hasUser = S.userSpecs && (S.userSpecs[k + '|'] || S.userSpecs[k]);
+        const hasAny  = findSpec(matName, '');
+        lbl.textContent = hasUser ? 'Изменить спецификацию' : (hasAny ? 'Переопределить спецификацию' : 'Создать спецификацию');
+      }
+
+      setTimeout(() => {
+        const el = document.getElementById('mat-popup-price');
+        if (el) el.focus();
+      }, 60);
+
+      usedModal = true;
+    }
+  } catch(e) {
+    console.warn('modal popup failed, fallback to prompt:', e);
+    usedModal = false;
   }
 
-  // Всегда по центру экрана — надёжно внутри скроллящихся таблиц
-  popup.style.top = '50%';
-  popup.style.left = '50%';
-  popup.style.transform = 'translate(-50%, -50%)';
-
-  // Focus
-  setTimeout(() => {
-    const priceInp = document.getElementById('mat-popup-price');
-    if (priceInp) priceInp.focus();
-  }, 60);
+  // Fallback — простое окно ввода. Работает всегда.
+  if (!usedModal) {
+    const cur = pb.price > 0 ? pb.price : '';
+    const val = window.prompt('Цена за единицу для:\n' + matName + '\n\n(введите число, пустое поле — очистить)', cur);
+    if (val === null) return; // отмена
+    const num = parseFloat(String(val).replace(',', '.').replace(/\s/g, ''));
+    if (!isNaN(num) && num > 0) {
+      S.pricebook[k].price = num;
+    } else {
+      S.pricebook[k].price = 0;
+    }
+    // чистим пустые
+    const p = S.pricebook[k];
+    if (!p.price && !p.alias && !p.unit && !p.comment) delete S.pricebook[k];
+    pbSave();
+    updatePbBadge();
+    // пересчёт
+    if (S.calcRows.length) runCalc(true);
+    if (P.items && P.items.length && P.items.some(i => i.cost !== undefined)) calcProduction(true);
+    try { renderPricebook(); } catch(e) {}
+  }
 }
 
 function closeMatPopup() {
@@ -2849,7 +2877,7 @@ function exportCSV() {
   XLSX.writeFile(wb, `sebestoimost_${date}.xlsx`);
 }
 
-console.log('%c\u2713 cost.calc v3.1 \u2014 \u0444\u0430\u0439\u043b \u0437\u0430\u0433\u0440\u0443\u0436\u0435\u043d \u043f\u043e\u043b\u043d\u043e\u0441\u0442\u044c\u044e', 'color:#22c55e;font-weight:bold;font-size:14px');
+console.log('%c\u2713 cost.calc v3.2 \u2014 \u0444\u0430\u0439\u043b \u0437\u0430\u0433\u0440\u0443\u0436\u0435\u043d \u043f\u043e\u043b\u043d\u043e\u0441\u0442\u044c\u044e', 'color:#22c55e;font-weight:bold;font-size:14px');
 window.__CALC_OK__ = true;
 </script>
 </body>
