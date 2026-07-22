@@ -188,7 +188,7 @@ select:focus{outline:none;border-color:var(--accent)}
   <!-- Topbar -->
   <header class="topbar">
     <div class="logo">cost<span>.</span>calc</div>
-    <div style="font-size:12px;color:var(--text3);font-family:var(--mono)">Калькулятор себестоимости мебели <span style="color:#7eb3ff">v3.7</span></div>
+    <div style="font-size:12px;color:var(--text3);font-family:var(--mono)">Калькулятор себестоимости мебели <span style="color:#7eb3ff">v3.8</span></div>
     <div class="topbar-right">
       <span id="top-status" style="font-size:11px;color:var(--text3);font-family:var(--mono)"></span>
       <button class="btn btn-sm" onclick="runCalc()" id="btn-recalc" style="display:none">↺ Обновить расчёт</button>
@@ -691,12 +691,12 @@ select:focus{outline:none;border-color:var(--accent)}
 
   <div style="margin-bottom:.75rem">
     <label style="font-size:11px;color:var(--text2);display:block;margin-bottom:.3rem">Цена за единицу, ₽</label>
-    <input type="number" class="inp" id="mat-popup-price" placeholder="введите цену" step="0.01" min="0" style="width:100%">
+    <input type="number" class="inp" id="mat-popup-price" placeholder="введите цену" step="0.01" min="0" style="width:100%;font-size:20px;font-weight:600;text-align:center;padding:.7rem;color:var(--accent)" onfocus="this.select()">
   </div>
 
   <div style="margin-bottom:1rem">
     <label style="font-size:11px;color:var(--text2);display:block;margin-bottom:.3rem">Аналог — взять цену от другого материала</label>
-    <input type="text" class="inp" id="mat-popup-alias" list="mat-popup-datalist" placeholder="начните вводить название..." style="width:100%">
+    <input type="text" class="inp" id="mat-popup-alias" list="mat-popup-datalist" placeholder="начните вводить название..." style="width:100%;font-size:14px;padding:.6rem">
     <datalist id="mat-popup-datalist"></datalist>
     <div style="font-size:10px;color:var(--text3);margin-top:.25rem">Если задан аналог — цена берётся от него. Своя цена имеет приоритет.</div>
   </div>
@@ -712,7 +712,7 @@ select:focus{outline:none;border-color:var(--accent)}
 
 <!-- Spec editor modal -->
 <div id="spec-modal" class="modal-overlay" style="display:none" onclick="if(event.target===this)closeSpecEditor()">
-  <div class="modal" style="width:720px;max-width:96vw">
+  <div class="modal" style="width:820px;max-width:96vw">
     <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:1rem">
       <div>
         <div class="modal-title" style="margin-bottom:.2rem">🧩 Спецификация полуфабриката</div>
@@ -725,13 +725,13 @@ select:focus{outline:none;border-color:var(--accent)}
       Укажите состав на <b>1 единицу</b> изделия. Компонентом может быть и сырьё, и другой полуфабрикат — вложенность раскроется автоматически.
     </div>
 
-    <div class="table-wrap" style="max-height:320px;overflow-y:auto">
+    <div class="table-wrap" style="max-height:340px;overflow-y:auto">
       <table>
         <thead><tr>
-          <th style="min-width:280px">Компонент</th>
-          <th class="r" style="width:90px">Ед. изм.</th>
-          <th class="r" style="width:100px">Норма</th>
-          <th class="r" style="width:110px">Цена/ед</th>
+          <th style="min-width:260px">Компонент</th>
+          <th class="r" style="width:80px">Ед. изм.</th>
+          <th class="r" style="width:130px">Норма расхода</th>
+          <th class="r" style="width:100px">Цена/ед</th>
           <th class="r" style="width:110px">Сумма</th>
           <th style="width:40px"></th>
         </tr></thead>
@@ -2243,19 +2243,23 @@ function renderSpecRows() {
     const noPrice = r.name && !unitCost;
     return `<tr style="${noPrice ? 'background:var(--amber-bg)' : ''}">
       <td>
-        <input class="inp" style="width:100%;font-size:12px" list="spec-datalist" data-f="name"
+        <input class="inp" style="width:100%;font-size:13px;padding:.45rem .6rem" list="spec-datalist" data-f="name"
                value="${String(r.name).replace(/"/g, '&quot;')}" placeholder="начните вводить название..."
                onchange="setSpecField(${i},'name',this.value)">
         ${srcTxt ? `<span style="font-size:10px;color:var(--text3)">${srcTxt}</span>` : ''}
         ${noPrice ? '<span class="badge badge-amber" style="font-size:9px;margin-left:4px">нет цены</span>' : ''}
       </td>
-      <td class="r"><input class="inp" style="width:100%;font-size:12px;text-align:center" value="${r.unit || ''}" placeholder="шт"
+      <td class="r"><input class="inp" style="width:100%;font-size:13px;text-align:center;padding:.45rem .3rem" value="${r.unit || ''}" placeholder="шт"
                onchange="setSpecField(${i},'unit',this.value)"></td>
-      <td class="r"><input class="inp" type="number" step="0.001" min="0" style="width:100%;font-size:12px;text-align:right" value="${r.qty}"
+      <td class="r"><input class="inp spec-norma-input" type="number" step="0.001" min="0"
+               style="width:100%;font-size:16px;font-weight:600;text-align:right;padding:.5rem .6rem;color:var(--accent);background:var(--bg);border:1.5px solid var(--border)"
+               value="${r.qty}"
+               onfocus="this.select();this.style.borderColor='var(--accent)'"
+               onblur="this.style.borderColor='var(--border)'"
                onchange="setSpecField(${i},'qty',this.value)"></td>
-      <td class="r" style="color:var(--text2)">${unitCost ? fmt(unitCost) : '—'}</td>
-      <td class="r" style="font-weight:500">${sum ? fmt(sum) : '—'}</td>
-      <td><button class="btn btn-sm btn-ghost" style="padding:2px 6px;color:var(--red)" onclick="removeSpecRow(${i})">×</button></td>
+      <td class="r" style="color:var(--text2);font-size:13px">${unitCost ? fmt(unitCost) : '—'}</td>
+      <td class="r" style="font-weight:600;font-size:13px">${sum ? fmt(sum) : '—'}</td>
+      <td><button class="btn btn-sm btn-ghost" style="padding:2px 6px;color:var(--red);font-size:16px" onclick="removeSpecRow(${i})">×</button></td>
     </tr>`;
   }).join('');
   document.getElementById('spec-rows').innerHTML = html;
@@ -3432,7 +3436,7 @@ function exportCSV() {
   XLSX.writeFile(wb, `sebestoimost_${date}.xlsx`);
 }
 
-console.log('%c\u2713 cost.calc v3.7 \u2014 \u0444\u0430\u0439\u043b \u0437\u0430\u0433\u0440\u0443\u0436\u0435\u043d \u043f\u043e\u043b\u043d\u043e\u0441\u0442\u044c\u044e', 'color:#22c55e;font-weight:bold;font-size:14px');
+console.log('%c\u2713 cost.calc v3.8 \u2014 \u0444\u0430\u0439\u043b \u0437\u0430\u0433\u0440\u0443\u0436\u0435\u043d \u043f\u043e\u043b\u043d\u043e\u0441\u0442\u044c\u044e', 'color:#22c55e;font-weight:bold;font-size:14px');
 window.__CALC_OK__ = true;
 </script>
 </body>
