@@ -188,7 +188,7 @@ select:focus{outline:none;border-color:var(--accent)}
   <!-- Topbar -->
   <header class="topbar">
     <div class="logo">cost<span>.</span>calc</div>
-    <div style="font-size:12px;color:var(--text3);font-family:var(--mono)">Калькулятор себестоимости мебели <span style="color:#7eb3ff">v3.2</span></div>
+    <div style="font-size:12px;color:var(--text3);font-family:var(--mono)">Калькулятор себестоимости мебели <span style="color:#7eb3ff">v3.3</span></div>
     <div class="topbar-right">
       <span id="top-status" style="font-size:11px;color:var(--text3);font-family:var(--mono)"></span>
       <button class="btn btn-sm" onclick="runCalc()" id="btn-recalc" style="display:none">↺ Обновить расчёт</button>
@@ -1564,6 +1564,8 @@ function renderTreeRows(nodes, total, depth, parentPath) {
     const srcLabel = { purchase: '<span class="price-source src-purchase">закупки</span>', stock: '<span class="price-source src-stock">остатки</span>', manual: '<span class="price-source src-manual">вручную</span>', pricebook: '<span class="price-source src-manual">справочник ★</span>', alias: '<span class="price-source src-stock">аналог →</span>' };
     const nameColor = isSemi ? '#c0c8dc' : '#9aa3b8';
     const nameWeight = isSemi ? '500' : '400';
+    // Кодируем имя в HTML-безопасный вид для data-атрибута (работает с любыми кавычками)
+    const encMatName = String(n.name).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/'/g,'&#39;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
     const safeMatName = JSON.stringify(n.name);
     // Все уровни глубже нулевого свёрнуты по умолчанию
     const hidden = depth > 0 ? 'display:none;' : '';
@@ -1588,9 +1590,9 @@ function renderTreeRows(nodes, total, depth, parentPath) {
       <td class="r" style="font-weight:${depth === 0 ? '500' : '400'};color:${n.cost > 0 ? '#c0c8dc' : '#5a6275'}">${n.cost > 0 ? fmt(n.cost) : '—'}</td>
       <td class="r" style="color:#7a8299">${pct > 0.01 ? pct.toFixed(1) + '%' : '—'}</td>
       <td style="white-space:nowrap">${n.leaf
-        ? `<button class="btn btn-sm btn-ghost" style="font-size:10px;padding:2px 6px;color:${n.hasPrice ? 'var(--text2)' : 'var(--amber)'}" onclick="event.stopPropagation();openMatPopup(${safeMatName},this)">${n.hasPrice ? '✎ цена' : '+ цена'}</button>
-           <button class="btn btn-sm btn-ghost" title="Создать спецификацию — если это полуфабрикат" style="font-size:10px;padding:2px 5px;color:#7eb3ff" onclick="event.stopPropagation();openSpecEditor(${safeMatName})">🧩</button>`
-        : `${n.src ? (srcLabel[n.src] || '') : ''}<button class="btn btn-sm btn-ghost" title="Изменить спецификацию" style="font-size:10px;padding:2px 5px;color:#7eb3ff" onclick="event.stopPropagation();openSpecEditor(${safeMatName})">🧩</button>`
+        ? `<button class="btn btn-sm btn-ghost mat-price-btn" data-mat="${encMatName}" style="font-size:10px;padding:2px 6px;color:${n.hasPrice ? 'var(--text2)' : 'var(--amber)'}">${n.hasPrice ? '✎ цена' : '+ цена'}</button>
+           <button class="btn btn-sm btn-ghost mat-spec-btn" data-mat="${encMatName}" title="Создать спецификацию — если это полуфабрикат" style="font-size:10px;padding:2px 5px;color:#7eb3ff">🧩</button>`
+        : `${n.src ? (srcLabel[n.src] || '') : ''}<button class="btn btn-sm btn-ghost mat-spec-btn" data-mat="${encMatName}" title="Изменить спецификацию" style="font-size:10px;padding:2px 5px;color:#7eb3ff">🧩</button>`
       }</td>
     </tr>`;
     if (isSemi) html += renderTreeRows(n.children, total, depth + 1, path);
@@ -1918,6 +1920,28 @@ function importPricebook(inp) {
 
 // ── Material inline popup ────────────────────────────────────────────────
 let _popupMatKey = null;
+
+// Делегированный обработчик — надёжно ловит клики по кнопкам цены/спецификации
+// (работает для любых названий, включая с кавычками)
+document.addEventListener('click', function(ev) {
+  const priceBtn = ev.target.closest('.mat-price-btn');
+  if (priceBtn) {
+    ev.stopPropagation();
+    ev.preventDefault();
+    const name = priceBtn.getAttribute('data-mat');
+    if (name != null) openMatPopup(name, priceBtn);
+    return;
+  }
+  const specBtn = ev.target.closest('.mat-spec-btn');
+  if (specBtn) {
+    ev.stopPropagation();
+    ev.preventDefault();
+    const name = specBtn.getAttribute('data-mat');
+    if (name != null) openSpecEditor(name);
+    return;
+  }
+}, true);
+
 
 function openMatPopup(matName, btnEl) {
   const k = norm(matName);
@@ -2577,7 +2601,7 @@ function renderProdTree(nodes, total, depth, parentPath) {
       <td style="text-align:right;padding:3px 6px;font-family:var(--mono);font-weight:${depth===0?'500':'400'};color:${n.cost>0?'#c0c8dc':'#5a6275'}">${n.cost>0?fmt(n.cost):'—'}</td>
       <td style="text-align:right;padding:3px 6px;color:#7a8299">${pct>0.01?pct.toFixed(1)+'%':'—'}</td>
       <td style="padding:3px 6px;font-size:10px;color:var(--text3)">${n.leaf&&n.src?(srcL[n.src]||''):''}
-        ${n.leaf?`<button class="btn btn-sm btn-ghost" style="font-size:9px;padding:1px 4px;color:${n.hasPrice?'var(--text3)':'var(--amber)'}" onclick="openMatPopup(${JSON.stringify(n.name)},this)">${n.hasPrice?'✎':'+ цена'}</button>`:''}
+        ${n.leaf?`<button class="btn btn-sm btn-ghost mat-price-btn" data-mat="${String(n.name).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}" style="font-size:9px;padding:1px 4px;color:${n.hasPrice?'var(--text3)':'var(--amber)'}">${n.hasPrice?'✎':'+ цена'}</button>`:''}
       </td>
     </tr>`;
     if (isSemi) row += renderProdTree(n.children, total, depth+1, path);
@@ -2877,7 +2901,7 @@ function exportCSV() {
   XLSX.writeFile(wb, `sebestoimost_${date}.xlsx`);
 }
 
-console.log('%c\u2713 cost.calc v3.2 \u2014 \u0444\u0430\u0439\u043b \u0437\u0430\u0433\u0440\u0443\u0436\u0435\u043d \u043f\u043e\u043b\u043d\u043e\u0441\u0442\u044c\u044e', 'color:#22c55e;font-weight:bold;font-size:14px');
+console.log('%c\u2713 cost.calc v3.3 \u2014 \u0444\u0430\u0439\u043b \u0437\u0430\u0433\u0440\u0443\u0436\u0435\u043d \u043f\u043e\u043b\u043d\u043e\u0441\u0442\u044c\u044e', 'color:#22c55e;font-weight:bold;font-size:14px');
 window.__CALC_OK__ = true;
 </script>
 </body>
