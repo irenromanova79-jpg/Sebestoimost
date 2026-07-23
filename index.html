@@ -188,7 +188,7 @@ select:focus{outline:none;border-color:var(--accent)}
   <!-- Topbar -->
   <header class="topbar">
     <div class="logo">cost<span>.</span>calc</div>
-    <div style="font-size:12px;color:var(--text3);font-family:var(--mono)">Калькулятор себестоимости мебели <span style="color:#7eb3ff">v3.8</span></div>
+    <div style="font-size:12px;color:var(--text3);font-family:var(--mono)">Калькулятор себестоимости мебели <span style="color:#7eb3ff">v3.9</span></div>
     <div class="topbar-right">
       <span id="top-status" style="font-size:11px;color:var(--text3);font-family:var(--mono)"></span>
       <button class="btn btn-sm" onclick="runCalc()" id="btn-recalc" style="display:none">↺ Обновить расчёт</button>
@@ -354,6 +354,18 @@ select:focus{outline:none;border-color:var(--accent)}
       <div id="calc-empty" class="empty"><span class="empty-icon">🧮</span>Загрузите данные и нажмите «Рассчитать»</div>
       <div id="calc-content" style="display:none">
         <div class="metrics" id="calc-metrics"></div>
+        <div style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;padding:.6rem .85rem;background:linear-gradient(135deg,rgba(79,142,247,.1),rgba(34,197,94,.06));border:1px solid rgba(79,142,247,.3);border-radius:var(--r);margin-bottom:.5rem">
+          <span style="font-size:12px;color:var(--text);font-weight:600">📊 Версия расчёта:</span>
+          <button class="btn btn-sm btn-primary" onclick="saveCalcVersion()">💾 Сохранить расчёт</button>
+          <select id="calc-version-select" style="min-width:240px" onchange="onCalcVersionPick()">
+            <option value="">— загрузить сохранённый расчёт —</option>
+          </select>
+          <button class="btn btn-sm" onclick="loadCalcVersion()" id="btn-load-calcver" style="display:none">📂 Загрузить и редактировать</button>
+          <button class="btn btn-sm" onclick="exportCalcVersion()" id="btn-exp-calcver" style="display:none">↓ Выгрузить в xlsx</button>
+          <button class="btn btn-sm" style="color:var(--red);border-color:var(--red);display:none" onclick="deleteCalcVersion()" id="btn-del-calcver">🗑</button>
+          <span class="toolbar-spacer"></span>
+          <span id="calc-version-info" style="font-size:11px;color:var(--text3)"></span>
+        </div>
         <div style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;padding:.6rem .85rem;background:var(--bg3);border:1px solid var(--border);border-radius:var(--r);margin-bottom:.75rem">
           <span style="font-size:12px;color:var(--text2);font-weight:500">📎 Нормативная себестоимость:</span>
           <button class="btn btn-sm btn-primary" onclick="saveNormVersion()">💾 Сохранить версию</button>
@@ -810,6 +822,7 @@ const S = {
   specs: {},
   userSpecs: {},   // спецификации созданные вручную (localStorage)
   normVersions: {}, // версии нормативной себестоимости (localStorage)
+  calcVersions: {}, // версии расчёта целиком (localStorage)
   allMaterials: new Set(),
   calcRows: [],
   ready: { sales: false, prices: false, specs: false }
@@ -822,6 +835,7 @@ const LS = {
   PRICES:    'costcalc_prices',
   USERSPECS: 'costcalc_userspecs',
   NORMVERS:  'costcalc_normversions',
+  CALCVERS:  'costcalc_calcversions',
 };
 
 function lsSave(key, data) {
@@ -981,6 +995,7 @@ function applyUserSpecs() {
 try { pbLoad(); } catch(e) { console.warn('pbLoad error:', e); S.pricebook = {}; }
 try { userSpecsLoad(); } catch(e) { console.warn('userSpecsLoad error:', e); S.userSpecs = {}; }
 try { normVersLoad(); refreshNormVersionUI(); } catch(e) { console.warn('normVersLoad error:', e); S.normVersions = {}; }
+try { calcVersLoad(); refreshCalcVersionUI(); } catch(e) { console.warn('calcVersLoad error:', e); S.calcVersions = {}; }
 
 let specsRestored = false, pricesRestored = false;
 try { specsRestored = specsLoad(); } catch(e) { console.warn('specsLoad error:', e); S.specs = {}; S.allMaterials = new Set(); S.ready.specs = false; }
@@ -1307,6 +1322,7 @@ function runCalc(stayOnTab) {
   renderPricesEditor();
   if (Object.keys(S.pricebook).length) renderPricebook();
   try { refreshNormVersionUI(); } catch(e) {}
+  try { refreshCalcVersionUI(); } catch(e) {}
   try { if (C.rows && C.rows.length) renderChannels(); } catch(e) {}
   // After calc: show Refresh, hide Calculate
   document.getElementById('btn-calc').style.display = 'none';
@@ -2962,6 +2978,200 @@ function normVersLoad() {
 }
 function normVersSave() { lsSave(LS.NORMVERS, S.normVersions); }
 
+// ══════════════════════════════════════════════════════════════════════════
+// ВЕРСИИ РАСЧЁТА (полный снимок: цены + спецификации + продажи + результат)
+// ══════════════════════════════════════════════════════════════════════════
+function calcVersLoad() {
+  const v = lsLoad(LS.CALCVERS);
+  S.calcVersions = (v && typeof v === 'object') ? v : {};
+}
+function calcVersSave() { lsSave(LS.CALCVERS, S.calcVersions); }
+
+function saveCalcVersion() {
+  if (!S.calcRows || !S.calcRows.length) {
+    alert('Сначала выполните расчёт (кнопка «Рассчитать»)');
+    return;
+  }
+  const def = 'Расчёт ' + new Date().toLocaleDateString('ru-RU');
+  const name = prompt('Название версии расчёта:\n(например «Июнь 2026», «Базовый», «После роста цен»)', def);
+  if (!name || !name.trim()) return;
+
+  const totCost = S.calcRows.reduce((s,r)=>s+(r.totalCost||0),0);
+  const totRev  = S.calcRows.reduce((s,r)=>s+(r.rev||0),0);
+
+  const id = 'c' + Date.now();
+  if (!S.calcVersions) S.calcVersions = {};
+  S.calcVersions[id] = {
+    name: name.trim(),
+    date: new Date().toLocaleString('ru-RU'),
+    // Полный снимок входных данных — чтобы можно было редактировать
+    pricebook: JSON.parse(JSON.stringify(S.pricebook || {})),
+    userSpecs: JSON.parse(JSON.stringify(S.userSpecs || {})),
+    purchasePrices: JSON.parse(JSON.stringify(S.purchasePrices || {})),
+    stockPrices: JSON.parse(JSON.stringify(S.stockPrices || {})),
+    manualPrices: JSON.parse(JSON.stringify(S.manualPrices || {})),
+    sales: JSON.parse(JSON.stringify(S.sales || [])),
+    // Итоги для быстрого просмотра
+    summary: { totCost, totRev, totMargin: totRev-totCost, positions: S.calcRows.length }
+  };
+  calcVersSave();
+  refreshCalcVersionUI();
+  alert(`Версия расчёта «${name.trim()}» сохранена.\n\nСебестоимость: ${fmt(totCost)} ₽\nВыручка: ${fmt(totRev)} ₽\nМаржа: ${fmt(totRev-totCost)} ₽`);
+}
+
+function onCalcVersionPick() {
+  const sel = document.getElementById('calc-version-select');
+  const id = sel.value;
+  const info = document.getElementById('calc-version-info');
+  const btnLoad = document.getElementById('btn-load-calcver');
+  const btnDel = document.getElementById('btn-del-calcver');
+  if (!id || !S.calcVersions[id]) {
+    info.textContent = '';
+    if (btnLoad) btnLoad.style.display = 'none';
+    if (btnDel) btnDel.style.display = 'none';
+    const be = document.getElementById('btn-exp-calcver');
+    if (be) be.style.display = 'none';
+    return;
+  }
+  const v = S.calcVersions[id];
+  const s = v.summary || {};
+  info.innerHTML = `сохранён ${v.date} · себест ${fmt(s.totCost||0)} ₽ · маржа ${fmt(s.totMargin||0)} ₽`;
+  if (btnLoad) btnLoad.style.display = 'inline-flex';
+  if (btnDel) btnDel.style.display = 'inline-flex';
+  const btnExp = document.getElementById('btn-exp-calcver');
+  if (btnExp) btnExp.style.display = 'inline-flex';
+}
+
+function loadCalcVersion() {
+  const sel = document.getElementById('calc-version-select');
+  const id = sel.value;
+  if (!id || !S.calcVersions[id]) { alert('Выберите версию из списка'); return; }
+  const v = S.calcVersions[id];
+  if (!confirm(`Загрузить версию «${v.name}» для редактирования?\n\nТекущие цены, спецификации и продажи будут заменены данными из этой версии. Расчёт можно менять и сохранить как новую версию.\n\nСовет: сначала сохраните текущий расчёт, если он нужен.`)) return;
+
+  // Восстанавливаем ВСЕ входные данные
+  S.pricebook = JSON.parse(JSON.stringify(v.pricebook || {}));
+  S.userSpecs = JSON.parse(JSON.stringify(v.userSpecs || {}));
+  S.purchasePrices = JSON.parse(JSON.stringify(v.purchasePrices || {}));
+  S.stockPrices = JSON.parse(JSON.stringify(v.stockPrices || {}));
+  S.manualPrices = JSON.parse(JSON.stringify(v.manualPrices || {}));
+  if (v.sales && v.sales.length) { S.sales = JSON.parse(JSON.stringify(v.sales)); S.ready.sales = true; }
+
+  // Сохраняем восстановленное в localStorage
+  pbSave();
+  userSpecsSave();
+  applyUserSpecs();
+
+  // Пересчитываем — теперь можно редактировать
+  runCalc(true);
+  try { renderPricebook(); } catch(e) {}
+  try { renderPricesEditor(); } catch(e) {}
+
+  alert(`Версия «${v.name}» загружена. Можете менять цены и спецификации, затем сохранить как новую версию.`);
+}
+
+function deleteCalcVersion() {
+  const sel = document.getElementById('calc-version-select');
+  const id = sel.value;
+  if (!id || !S.calcVersions[id]) return;
+  if (!confirm(`Удалить версию расчёта «${S.calcVersions[id].name}»?`)) return;
+  delete S.calcVersions[id];
+  calcVersSave();
+  sel.value = '';
+  refreshCalcVersionUI();
+}
+
+function exportCalcVersion() {
+  const sel = document.getElementById('calc-version-select');
+  const id = sel.value;
+  if (!id || !S.calcVersions[id]) { alert('Выберите версию из списка'); return; }
+  const v = S.calcVersions[id];
+
+  // Пересчитываем расчёт по данным версии, не меняя текущее состояние
+  const bak = {
+    pricebook: S.pricebook, userSpecs: S.userSpecs, purchasePrices: S.purchasePrices,
+    stockPrices: S.stockPrices, manualPrices: S.manualPrices, specs: S.specs
+  };
+  let rows = [];
+  try {
+    S.pricebook = v.pricebook || {};
+    S.userSpecs = v.userSpecs || {};
+    S.purchasePrices = v.purchasePrices || {};
+    S.stockPrices = v.stockPrices || {};
+    S.manualPrices = v.manualPrices || {};
+    S.specs = JSON.parse(JSON.stringify(bak.specs || {}));
+    applyUserSpecs();
+    const sales = v.sales || [];
+    rows = sales.map(s => {
+      const key = findSpec(s.nom, s.char);
+      let cost = 0, full = false;
+      if (key) { const r = calcCost(s.nom, s.char, new Set(), 0); cost = r.cost; full = r.full; }
+      const totalCost = cost * s.qty;
+      const margin = s.rev - totalCost;
+      return { nom: s.nom, char: s.char || '', qty: s.qty, rev: s.rev,
+               cost, totalCost, margin, mp: s.rev>0?margin/s.rev*100:0,
+               status: !key ? 'нет спецификации' : (full ? 'полный' : 'неполный') };
+    });
+  } finally {
+    S.pricebook = bak.pricebook; S.userSpecs = bak.userSpecs;
+    S.purchasePrices = bak.purchasePrices; S.stockPrices = bak.stockPrices;
+    S.manualPrices = bak.manualPrices; S.specs = bak.specs;
+  }
+
+  const wb = XLSX.utils.book_new();
+  const s = v.summary || {};
+
+  // Лист «Итого»
+  const wsSum = XLSX.utils.aoa_to_sheet([
+    ['Версия расчёта', v.name],
+    ['Сохранён', v.date],
+    ['', ''],
+    ['Показатель', 'Значение'],
+    ['Себестоимость продаж, ₽', +(s.totCost||0).toFixed(2)],
+    ['Выручка, ₽', +(s.totRev||0).toFixed(2)],
+    ['Маржа, ₽', +(s.totMargin||0).toFixed(2)],
+    ['Маржа, %', +(s.totRev ? (s.totMargin/s.totRev*100) : 0).toFixed(1)],
+    ['Позиций', s.positions||rows.length],
+  ]);
+  wsSum['!cols'] = [{wch:30},{wch:26}];
+  ['B5','B6','B7'].forEach(a => { if (wsSum[a]) wsSum[a].z = '#,##0.00'; });
+  if (wsSum['B8']) wsSum['B8'].z = '0.0"%"';
+  XLSX.utils.book_append_sheet(wb, wsSum, 'Итого');
+
+  // Лист «Расчёт по продажам»
+  const hdr = ['Номенклатура','Характеристика','Кол-во','Выручка, ₽','Себест/ед, ₽','Себест итого, ₽','Маржа, ₽','Маржа, %','Статус'];
+  const data = rows.sort((a,b)=>(b.totalCost||0)-(a.totalCost||0)).map(r => [
+    r.nom, r.char, r.qty, Math.round(r.rev), +(r.cost||0).toFixed(2),
+    +(r.totalCost||0).toFixed(2), Math.round(r.margin), +r.mp.toFixed(1), r.status
+  ]);
+  data.push(['ИТОГО','', rows.reduce((a,r)=>a+(r.qty||0),0), Math.round(rows.reduce((a,r)=>a+(r.rev||0),0)),
+             '', +rows.reduce((a,r)=>a+(r.totalCost||0),0).toFixed(2),
+             Math.round(rows.reduce((a,r)=>a+(r.margin||0),0)), '', '']);
+  const ws = XLSX.utils.aoa_to_sheet([hdr, ...data]);
+  ws['!cols'] = [{wch:45},{wch:26},{wch:9},{wch:14},{wch:14},{wch:16},{wch:14},{wch:10},{wch:18}];
+  XLSX.utils.book_append_sheet(wb, ws, 'Расчёт по продажам');
+
+  const safe = v.name.replace(/[^\wа-яА-Я0-9-]+/g,'_').slice(0,40);
+  XLSX.writeFile(wb, `raschet_${safe}.xlsx`);
+}
+
+function refreshCalcVersionUI() {
+  const versions = S.calcVersions || {};
+  const opts = Object.entries(versions)
+    .sort((a,b) => b[0].localeCompare(a[0]))
+    .map(([id, v]) => {
+      const s = v.summary || {};
+      return `<option value="${id}">${v.name} — ${fmt(s.totCost||0)} ₽ (${v.date})</option>`;
+    }).join('');
+  const sel = document.getElementById('calc-version-select');
+  if (sel) {
+    const cur = sel.value;
+    sel.innerHTML = '<option value="">— загрузить сохранённый расчёт —</option>' + opts;
+    sel.value = cur;
+  }
+  onCalcVersionPick();
+}
+
 function saveNormVersion() {
   if (!S.calcRows || !S.calcRows.length) {
     if (!Object.keys(S.specs).length) { alert('Сначала загрузите спецификации и выполните расчёт'); return; }
@@ -3284,6 +3494,7 @@ function backupAll() {
     pricebook: S.pricebook || {},
     userSpecs: S.userSpecs || {},
     normVersions: S.normVersions || {},
+    calcVersions: S.calcVersions || {},
     // цены закупок тоже сохраняем — вдруг понадобятся
     purchasePrices: S.purchasePrices || {},
   };
@@ -3324,6 +3535,10 @@ function restoreAll(inp) {
         S.normVersions = b.normVersions; normVersSave();
         restored.push('версии (' + Object.keys(b.normVersions).length + ')');
       }
+      if (b.calcVersions && typeof b.calcVersions === 'object') {
+        S.calcVersions = b.calcVersions; calcVersSave();
+        restored.push('версии расчёта (' + Object.keys(b.calcVersions).length + ')');
+      }
       if (b.purchasePrices && typeof b.purchasePrices === 'object' && Object.keys(b.purchasePrices).length && !Object.keys(S.purchasePrices||{}).length) {
         S.purchasePrices = b.purchasePrices;
         restored.push('цены закупок (' + Object.keys(b.purchasePrices).length + ')');
@@ -3331,6 +3546,7 @@ function restoreAll(inp) {
       // Обновляем интерфейс
       updatePbBadge();
       try { refreshNormVersionUI(); } catch(_){}
+      try { refreshCalcVersionUI(); } catch(_){}
       try { renderPricebook(); } catch(_){}
       try { renderPricesEditor(); } catch(_){}
       if (S.calcRows && S.calcRows.length) runCalc(true);
@@ -3436,7 +3652,7 @@ function exportCSV() {
   XLSX.writeFile(wb, `sebestoimost_${date}.xlsx`);
 }
 
-console.log('%c\u2713 cost.calc v3.8 \u2014 \u0444\u0430\u0439\u043b \u0437\u0430\u0433\u0440\u0443\u0436\u0435\u043d \u043f\u043e\u043b\u043d\u043e\u0441\u0442\u044c\u044e', 'color:#22c55e;font-weight:bold;font-size:14px');
+console.log('%c\u2713 cost.calc v3.9 \u2014 \u0444\u0430\u0439\u043b \u0437\u0430\u0433\u0440\u0443\u0436\u0435\u043d \u043f\u043e\u043b\u043d\u043e\u0441\u0442\u044c\u044e', 'color:#22c55e;font-weight:bold;font-size:14px');
 window.__CALC_OK__ = true;
 </script>
 </body>
