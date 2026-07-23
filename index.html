@@ -3,24 +3,26 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Калькулятор себестоимости</title>
+<title>IRIX COST — себестоимость и калькуляция</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' fill='%230D1B16'/%3E%3Cpolygon points='12,12 12,88 50,50' fill='%2300E38A'/%3E%3Cpolygon points='50,50 88,12 42,12' fill='%2300E38A'/%3E%3Cpolygon points='12,88 50,50 88,88' fill='%2300B874'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Geologica:wght@300;400;500;600&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
 :root{
-  --bg:#0f1117;
-  --bg2:#161b27;
-  --bg3:#1e2535;
-  --bg4:#252d40;
-  --border:#2a3349;
-  --text:#e8eaf0;
-  --text2:#8b92a8;
-  --text3:#4a5168;
-  --accent:#4f8ef7;
-  --accent2:#2563eb;
-  --green:#22c55e;
-  --green-bg:rgba(34,197,94,.1);
+  /* IRIX — smart apps by Irina */
+  --bg:#0A0F0D;
+  --bg2:#0D1B16;
+  --bg3:#151A19;
+  --bg4:#1E2724;
+  --border:#243029;
+  --text:#F2F2F2;
+  --text2:#8A9691;
+  --text3:#4E5A55;
+  --accent:#00E38A;
+  --accent2:#00B874;
+  --green:#00E38A;
+  --green-bg:rgba(0,227,138,.1);
   --red:#ef4444;
   --red-bg:rgba(239,68,68,.1);
   --amber:#f59e0b;
@@ -35,13 +37,17 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:14
 /* Layout */
 .app{display:grid;grid-template-columns:220px 1fr;grid-template-rows:56px 1fr;height:100vh;overflow:hidden}
 .topbar{grid-column:1/-1;display:flex;align-items:center;padding:0 1.5rem;border-bottom:1px solid var(--border);background:var(--bg2);gap:1rem}
-.logo{font-family:var(--mono);font-size:13px;font-weight:500;color:var(--accent);letter-spacing:.05em}
-.logo span{color:var(--text2)}
+.logo{display:flex;align-items:center;gap:.6rem;text-decoration:none}
+.logo-mark{width:26px;height:26px;flex-shrink:0}
+.logo-text{display:flex;flex-direction:column;line-height:1}
+.logo-name{font-size:16px;font-weight:600;color:#fff;letter-spacing:.14em}
+.logo-name b{color:var(--accent);font-weight:600}
+.logo-sub{font-size:7.5px;color:var(--accent);letter-spacing:.22em;margin-top:3px;font-family:var(--mono)}
 .topbar-right{margin-left:auto;display:flex;align-items:center;gap:.75rem}
 .sidebar{background:var(--bg2);border-right:1px solid var(--border);padding:1rem 0;display:flex;flex-direction:column;gap:2px;overflow-y:auto}
 .nav-item{display:flex;align-items:center;gap:.625rem;padding:.5rem 1rem;cursor:pointer;border-radius:0;font-size:13px;color:var(--text2);transition:all .15s;border-left:2px solid transparent;margin:0 .5rem;border-radius:var(--r)}
 .nav-item:hover{background:var(--bg3);color:var(--text)}
-.nav-item.active{background:rgba(79,142,247,.1);color:var(--accent);border-left-color:var(--accent)}
+.nav-item.active{background:rgba(0,227,138,.1);color:var(--accent);border-left-color:var(--accent)}
 .nav-icon{font-size:16px;width:18px;text-align:center}
 .nav-sep{height:1px;background:var(--border);margin:.5rem 1rem}
 .nav-label{font-size:10px;color:var(--text3);padding:.5rem 1rem .25rem;text-transform:uppercase;letter-spacing:.08em;font-weight:500}
@@ -53,7 +59,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:14
 /* Upload zones */
 .upload-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:.875rem;margin-bottom:1rem}
 .upload-zone{border:1px dashed var(--border);border-radius:var(--r2);padding:1.5rem 1rem;text-align:center;cursor:pointer;transition:all .2s;position:relative}
-.upload-zone:hover{border-color:var(--accent);background:rgba(79,142,247,.05)}
+.upload-zone:hover{border-color:var(--accent);background:rgba(0,227,138,.05)}
 .upload-zone.loaded{border-color:var(--green);border-style:solid}
 .upload-icon{font-size:24px;margin-bottom:.5rem;display:block}
 .upload-title{font-size:13px;font-weight:500;margin-bottom:.25rem}
@@ -87,7 +93,7 @@ tr:hover td{background:rgba(255,255,255,.02)}
 .badge-red{background:var(--red-bg);color:var(--red)}
 .badge-amber{background:var(--amber-bg);color:var(--amber)}
 .badge-gray{background:var(--bg3);color:var(--text2)}
-.badge-blue{background:rgba(79,142,247,.1);color:var(--accent)}
+.badge-blue{background:rgba(0,227,138,.1);color:var(--accent)}
 /* Buttons */
 .btn{padding:.5rem 1rem;border:1px solid var(--border);border-radius:var(--r);background:transparent;color:var(--text);cursor:pointer;font-size:13px;font-family:var(--font);display:inline-flex;align-items:center;gap:.375rem;transition:all .15s}
 .btn:hover{background:var(--bg3);border-color:var(--text3)}
@@ -106,7 +112,7 @@ select:focus{outline:none;border-color:var(--accent)}
 .toolbar-spacer{flex:1}
 /* Alert */
 .alert{padding:.75rem 1rem;border-radius:var(--r);font-size:12px;margin-bottom:.875rem;display:flex;align-items:flex-start;gap:.625rem;border:1px solid}
-.alert-blue{background:rgba(79,142,247,.08);border-color:rgba(79,142,247,.2);color:#7eb3ff}
+.alert-blue{background:rgba(0,227,138,.08);border-color:rgba(0,227,138,.2);color:#5EF2B4}
 .alert-amber{background:var(--amber-bg);border-color:rgba(245,158,11,.25);color:var(--amber)}
 .alert-green{background:var(--green-bg);border-color:rgba(34,197,94,.25);color:var(--green)}
 /* Price editor table */
@@ -169,7 +175,7 @@ select:focus{outline:none;border-color:var(--accent)}
 /* Expandable rows */
 .expand-btn{background:none;border:1px solid var(--border);border-radius:4px;color:var(--text2);cursor:pointer;font-size:11px;padding:2px 7px;transition:all .15s;font-family:var(--mono)}
 .expand-btn:hover{background:var(--bg3);color:var(--text)}
-.expand-btn.open{background:rgba(79,142,247,.1);border-color:var(--accent);color:var(--accent)}
+.expand-btn.open{background:rgba(0,227,138,.1);border-color:var(--accent);color:var(--accent)}
 .detail-row td{padding:0!important;border-bottom:none}
 .detail-inner{background:#1a2030;border-bottom:1px solid var(--border);overflow:hidden;max-height:0;transition:max-height .3s ease}
 .detail-inner.open{max-height:2000px}
@@ -180,15 +186,15 @@ select:focus{outline:none;border-color:var(--accent)}
 .detail-inner tr:last-child td{border-bottom:none}
 .detail-inner tr:hover td{background:rgba(255,255,255,.02)}
 /* Indent lines for nested levels */
-.detail-inner tbody tr td:first-child{border-left:2px solid rgba(79,142,247,.12)}
+.detail-inner tbody tr td:first-child{border-left:2px solid rgba(0,227,138,.12)}
 </style>
 </head>
 <body>
 <div class="app">
   <!-- Topbar -->
   <header class="topbar">
-    <div class="logo">cost<span>.</span>calc</div>
-    <div style="font-size:12px;color:var(--text3);font-family:var(--mono)">Калькулятор себестоимости мебели <span style="color:#7eb3ff">v3.9</span></div>
+    <div class="logo"><svg class="logo-mark" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" aria-label="IRIX"><polygon points="4,4 4,96 50,50" fill="#00E38A"/><polygon points="50,50 96,4 40,4" fill="#00E38A"/><polygon points="4,96 50,50 96,96" fill="#00B874"/></svg><div class="logo-text"><div class="logo-name">IRIX <b>COST</b></div><div class="logo-sub">SMART APPS BY IRINA ROMANOVA</div></div></div>
+    <div style="margin-left:.75rem;line-height:1.35"><div style="font-size:12px;color:var(--text2);font-family:var(--mono)">Себестоимость и калькуляция <span style="color:var(--accent)">v4.2</span></div><div style="font-size:10px;color:var(--text3)">умные приложения для бизнеса</div></div>
     <div class="topbar-right">
       <span id="top-status" style="font-size:11px;color:var(--text3);font-family:var(--mono)"></span>
       <button class="btn btn-sm" onclick="runCalc()" id="btn-recalc" style="display:none">↺ Обновить расчёт</button>
@@ -228,10 +234,18 @@ select:focus{outline:none;border-color:var(--accent)}
     <div class="nav-item" data-tab="channels">
       <span class="nav-icon">🛒</span> Каналы продаж
     </div>
+    <div class="nav-item" data-tab="vypusk">
+      <span class="nav-icon">🔍</span> Сверка выпуска
+    </div>
     <div class="nav-sep"></div>
     <div class="nav-label">Экспорт</div>
     <div class="nav-item" onclick="exportCSV()">
       <span class="nav-icon">↓</span> Скачать Excel
+    </div>
+    <div style="margin-top:auto;padding:1rem .75rem .25rem;text-align:center">
+      <div style="font-size:8px;color:var(--text3);letter-spacing:.18em;font-family:var(--mono);line-height:1.8">
+        КОД · ДАННЫЕ · СМЫСЛ<br><span style="color:var(--accent)">РЕЗУЛЬТАТ</span>
+      </div>
     </div>
   </nav>
 
@@ -240,7 +254,7 @@ select:focus{outline:none;border-color:var(--accent)}
 
     <!-- UPLOAD -->
     <div id="tab-upload" class="section active">
-      <div style="background:linear-gradient(135deg,rgba(34,197,94,.1),rgba(79,142,247,.08));border:1px solid rgba(34,197,94,.3);border-radius:var(--r2);padding:1rem 1.25rem;margin-bottom:1rem;display:flex;align-items:center;gap:1rem;flex-wrap:wrap">
+      <div style="background:linear-gradient(135deg,rgba(34,197,94,.1),rgba(0,227,138,.08));border:1px solid rgba(34,197,94,.3);border-radius:var(--r2);padding:1rem 1.25rem;margin-bottom:1rem;display:flex;align-items:center;gap:1rem;flex-wrap:wrap">
         <div style="flex:1;min-width:280px">
           <div style="font-size:14px;font-weight:600;margin-bottom:.2rem">💾 Резервная копия всех данных</div>
           <div style="font-size:12px;color:var(--text2)">Справочник цен, свои спецификации и версии сохраняются в браузере. <b style="color:var(--amber)">Перед заливкой на GitHub сохраните копию в файл</b> — тогда данные не потеряются. Восстановление — одним файлом.</div>
@@ -284,7 +298,7 @@ select:focus{outline:none;border-color:var(--accent)}
           <input type="file" id="f-specs" accept=".xlsx,.xls" style="display:none" onchange="loadSpecs(this)">
         </div>
         <div id="cache-label-specs" style="margin-top:.25rem;padding:0 .25rem"></div>
-        <div style="margin-top:.25rem;padding:0 .25rem;font-size:11px;color:#7eb3ff">
+        <div style="margin-top:.25rem;padding:0 .25rem;font-size:11px;color:#5EF2B4">
           🧩 своих спецификаций: <span id="badge-userspecs" style="display:none;font-weight:600">0</span><span id="badge-userspecs-zero">0</span>
         </div>
         <div style="text-align:right;margin-top:.25rem">
@@ -354,7 +368,7 @@ select:focus{outline:none;border-color:var(--accent)}
       <div id="calc-empty" class="empty"><span class="empty-icon">🧮</span>Загрузите данные и нажмите «Рассчитать»</div>
       <div id="calc-content" style="display:none">
         <div class="metrics" id="calc-metrics"></div>
-        <div style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;padding:.6rem .85rem;background:linear-gradient(135deg,rgba(79,142,247,.1),rgba(34,197,94,.06));border:1px solid rgba(79,142,247,.3);border-radius:var(--r);margin-bottom:.5rem">
+        <div style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;padding:.6rem .85rem;background:linear-gradient(135deg,rgba(0,227,138,.1),rgba(34,197,94,.06));border:1px solid rgba(0,227,138,.3);border-radius:var(--r);margin-bottom:.5rem">
           <span style="font-size:12px;color:var(--text);font-weight:600">📊 Версия расчёта:</span>
           <button class="btn btn-sm btn-primary" onclick="saveCalcVersion()">💾 Сохранить расчёт</button>
           <select id="calc-version-select" style="min-width:240px" onchange="onCalcVersionPick()">
@@ -688,6 +702,73 @@ select:focus{outline:none;border-color:var(--accent)}
       </div>
     </div>
 
+    <!-- VYPUSK — сверка нормативной себестоимости с себестоимостью выпуска -->
+    <div id="tab-vypusk" class="section">
+      <div class="alert alert-blue"><span>ℹ</span><div>Сверка помодельно: загрузите отчёт «Себестоимость выпуска» из 1С — приложение сопоставит фактическую себестоимость с нормативной (по спецификациям) и покажет отклонения.</div></div>
+
+      <div class="card" style="margin-bottom:1rem">
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.75rem">
+          <div>
+            <div class="card-title" style="margin-bottom:.25rem">Загрузить себестоимость выпуска</div>
+            <div style="font-size:12px;color:var(--text2)">Колонки: Номенклатура · Количество · Себестоимость (сумма или за единицу). Характеристика — если есть.</div>
+          </div>
+          <div class="upload-zone" onclick="document.getElementById('f-vypusk').click()" style="padding:.5rem 1rem;display:inline-flex;align-items:center;gap:.5rem">
+            <span>🔍</span><span style="font-size:12px">Выбрать файл xlsx</span>
+          </div>
+          <input type="file" id="f-vypusk" accept=".xlsx,.xls,.csv" style="display:none" onchange="loadVypusk(this)">
+        </div>
+        <div id="vp-file-status" style="margin-top:.5rem"></div>
+        <div style="margin-top:.75rem;padding-top:.75rem;border-top:1px solid var(--border);display:flex;align-items:center;gap:.75rem;flex-wrap:wrap">
+          <span style="font-size:12px;color:var(--text2)">Норматив брать из:</span>
+          <select id="vp-norm-source" style="min-width:260px" onchange="renderVypusk()">
+            <option value="current">Текущий расчёт</option>
+          </select>
+          <span style="font-size:12px;color:var(--text2);margin-left:.5rem">Порог отклонения:</span>
+          <select id="vp-threshold" style="width:110px" onchange="renderVypusk()">
+            <option value="0">все</option>
+            <option value="5" selected>&gt; 5%</option>
+            <option value="10">&gt; 10%</option>
+            <option value="20">&gt; 20%</option>
+          </select>
+          <span class="toolbar-spacer"></span>
+          <button class="btn btn-primary btn-sm" onclick="renderVypusk()">▶ Сверить</button>
+        </div>
+      </div>
+
+      <div id="vp-result" style="display:none">
+        <div class="metrics" id="vp-metrics" style="margin-bottom:1rem"></div>
+        <div style="display:flex;gap:.5rem;margin-bottom:.75rem;align-items:center;flex-wrap:wrap">
+          <span style="font-size:13px;font-weight:500">Сверка по моделям</span>
+          <input type="search" class="inp" style="width:220px;margin-left:.5rem" placeholder="Поиск модели..." id="vp-q" oninput="renderVypusk()">
+          <select id="vp-filter" onchange="renderVypusk()">
+            <option value="all">Все позиции</option>
+            <option value="over">Факт выше норматива</option>
+            <option value="under">Факт ниже норматива</option>
+            <option value="nonorm">Нет норматива</option>
+          </select>
+          <span class="toolbar-spacer"></span>
+          <button class="btn btn-sm" onclick="exportVypusk()">↓ Скачать xlsx</button>
+        </div>
+        <div class="card" style="padding:0;overflow:hidden">
+          <table>
+            <thead><tr>
+              <th>Модель</th>
+              <th>Характеристика</th>
+              <th class="r">Кол-во</th>
+              <th class="r">Норматив/ед, ₽</th>
+              <th class="r">Факт/ед, ₽</th>
+              <th class="r">Откл/ед, ₽</th>
+              <th class="r">Откл, %</th>
+              <th class="r">Норматив итого, ₽</th>
+              <th class="r">Факт итого, ₽</th>
+              <th class="r">Отклонение итого, ₽</th>
+            </tr></thead>
+            <tbody id="vp-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
   </main>
 
 </div>
@@ -717,7 +798,7 @@ select:focus{outline:none;border-color:var(--accent)}
     <button class="btn btn-primary" style="flex:1" onclick="saveMatPopup()">✓ Применить</button>
     <button class="btn" onclick="closeMatPopup()">Отмена</button>
   </div>
-  <button class="btn" style="width:100%;justify-content:center;font-size:12px;color:#7eb3ff;border-color:rgba(79,142,247,.4)"
+  <button class="btn" style="width:100%;justify-content:center;font-size:12px;color:#5EF2B4;border-color:rgba(0,227,138,.4)"
           onclick="openSpecEditorFromPopup()">🧩 <span id="spec-btn-label">Создать спецификацию</span></button>
   <div style="font-size:10px;color:var(--text3);margin-top:.35rem;text-align:center">Если это полуфабрикат — задайте из чего он состоит</div>
 </div>
@@ -728,12 +809,12 @@ select:focus{outline:none;border-color:var(--accent)}
     <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:1rem">
       <div>
         <div class="modal-title" style="margin-bottom:.2rem">🧩 Спецификация полуфабриката</div>
-        <div style="font-size:13px;font-weight:500;color:#7eb3ff" id="spec-modal-name"></div>
+        <div style="font-size:13px;font-weight:500;color:#5EF2B4" id="spec-modal-name"></div>
       </div>
       <button onclick="closeSpecEditor()" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:18px">×</button>
     </div>
 
-    <div style="background:rgba(79,142,247,.08);border:1px solid rgba(79,142,247,.2);border-radius:var(--r);padding:.55rem .85rem;font-size:12px;color:#7eb3ff;margin-bottom:.85rem">
+    <div style="background:rgba(0,227,138,.08);border:1px solid rgba(0,227,138,.2);border-radius:var(--r);padding:.55rem .85rem;font-size:12px;color:#5EF2B4;margin-bottom:.85rem">
       Укажите состав на <b>1 единицу</b> изделия. Компонентом может быть и сырьё, и другой полуфабрикат — вложенность раскроется автоматически.
     </div>
 
@@ -1324,6 +1405,7 @@ function runCalc(stayOnTab) {
   try { refreshNormVersionUI(); } catch(e) {}
   try { refreshCalcVersionUI(); } catch(e) {}
   try { if (C.rows && C.rows.length) renderChannels(); } catch(e) {}
+  try { if (V.rows && V.rows.length) renderVypusk(); } catch(e) {}
   // After calc: show Refresh, hide Calculate
   document.getElementById('btn-calc').style.display = 'none';
   document.getElementById('btn-recalc').style.display = 'inline-flex';
@@ -1695,11 +1777,11 @@ function renderTreeRows(nodes, total, depth, parentPath) {
     const toggle = isSemi
       ? `<button class="tree-toggle-btn" data-open="0" onclick="event.stopPropagation();toggleTreeNode('${path}',this)"
            style="width:15px;height:15px;line-height:13px;text-align:center;padding:0;margin-right:6px;
-                  background:var(--bg4);border:1px solid var(--border);border-radius:3px;color:#7eb3ff;
+                  background:var(--bg4);border:1px solid var(--border);border-radius:3px;color:#5EF2B4;
                   cursor:pointer;font-size:11px;font-family:var(--mono);flex-shrink:0">+</button>`
       : `<span style="display:inline-block;width:15px;margin-right:6px;text-align:center;color:${n.hasPrice ? 'var(--green)' : 'var(--red)'};font-size:8px">${n.hasPrice ? '\u25CF' : '\u25CB'}</span>`;
 
-    let html = `<tr class="tree-row" data-path="${path}" data-depth="${depth}" style="${hidden}${isSemi ? 'background:rgba(79,142,247,.05)' : ''}">
+    let html = `<tr class="tree-row" data-path="${path}" data-depth="${depth}" style="${hidden}${isSemi ? 'background:rgba(0,227,138,.05)' : ''}">
       <td style="padding-left:${8 + ind}px;color:${nameColor};font-weight:${nameWeight};white-space:nowrap">
         ${toggle}${n.name}
         ${isSemi ? '<span class="badge badge-blue" style="margin-left:4px;font-size:9px">п/ф</span>' : ''}
@@ -1712,8 +1794,8 @@ function renderTreeRows(nodes, total, depth, parentPath) {
       <td class="r" style="color:#7a8299">${pct > 0.01 ? pct.toFixed(1) + '%' : '—'}</td>
       <td style="white-space:nowrap">${n.leaf
         ? `<button class="btn btn-sm btn-ghost mat-price-btn" data-mat="${encMatName}" style="font-size:10px;padding:2px 6px;color:${n.hasPrice ? 'var(--text2)' : 'var(--amber)'}">${n.hasPrice ? '✎ цена' : '+ цена'}</button>
-           <button class="btn btn-sm btn-ghost mat-spec-btn" data-mat="${encMatName}" title="Создать спецификацию — если это полуфабрикат" style="font-size:10px;padding:2px 5px;color:#7eb3ff">🧩</button>`
-        : `${n.src ? (srcLabel[n.src] || '') : ''}<button class="btn btn-sm btn-ghost mat-spec-btn" data-mat="${encMatName}" title="Изменить спецификацию" style="font-size:10px;padding:2px 5px;color:#7eb3ff">🧩</button>`
+           <button class="btn btn-sm btn-ghost mat-spec-btn" data-mat="${encMatName}" title="Создать спецификацию — если это полуфабрикат" style="font-size:10px;padding:2px 5px;color:#5EF2B4">🧩</button>`
+        : `${n.src ? (srcLabel[n.src] || '') : ''}<button class="btn btn-sm btn-ghost mat-spec-btn" data-mat="${encMatName}" title="Изменить спецификацию" style="font-size:10px;padding:2px 5px;color:#5EF2B4">🧩</button>`
       }</td>
     </tr>`;
     if (isSemi) html += renderTreeRows(n.children, total, depth + 1, path);
@@ -1894,7 +1976,7 @@ function renderPricebook() {
     const hasPb   = pb != null && pb.price > 0;
     const hasAlias = pbAlias && pbAlias.trim();
     const { price: resolvedPrice } = getPrice(k);
-    const rowBg = hasAlias ? 'rgba(34,197,94,.05)' : (hasPb ? 'rgba(79,142,247,.04)' : '');
+    const rowBg = hasAlias ? 'rgba(34,197,94,.05)' : (hasPb ? 'rgba(0,227,138,.04)' : '');
     const safeK = k.replace(/[^\w]/g,'_').slice(0,20) + Math.random().toString(36).slice(2,6);
     return `<tr style="${rowBg ? 'background:'+rowBg : ''}">
       <td style="font-weight:${hasPb||hasAlias?'500':'400'};font-size:12px">
@@ -2369,7 +2451,7 @@ function printDrillDirect() {
       <div style="font-size:15px;font-weight:700">Детализация себестоимости: ${title}</div>
       <div style="font-size:10px;color:#555">Дата: ${new Date().toLocaleString('ru-RU')}</div>
     </div>
-    <div style="font-size:10px;color:#555">cost.calc · Калькулятор себестоимости мебели</div>
+    <div style="font-size:10px;color:#555">IRIX COST · smart apps by Irina Romanova</div>
   </div>`;
 
   setTimeout(() => {
@@ -2443,7 +2525,7 @@ function doPrint() {
           Фильтр: ${filterLabel}${q ? ' · Поиск: «'+q+'»' : ''} · Строк: ${rowCount} · Дата: ${new Date().toLocaleString('ru-RU')}
         </div>
       </div>
-      <div style="text-align:right;font-size:10px;color:#555">cost.calc · Калькулятор себестоимости мебели</div>
+      <div style="text-align:right;font-size:10px;color:#555">IRIX COST · smart apps by Irina Romanova</div>
     </div>`;
   });
 
@@ -2711,10 +2793,10 @@ function renderProdTree(nodes, total, depth, parentPath) {
     const toggle = isSemi
       ? `<button class="tree-toggle-btn" data-open="0" onclick="event.stopPropagation();toggleTreeNode('${path}',this)"
            style="width:14px;height:14px;line-height:12px;text-align:center;padding:0;margin-right:5px;
-                  background:var(--bg4);border:1px solid var(--border);border-radius:3px;color:#7eb3ff;
+                  background:var(--bg4);border:1px solid var(--border);border-radius:3px;color:#5EF2B4;
                   cursor:pointer;font-size:10px;font-family:var(--mono)">+</button>`
       : `<span style="display:inline-block;width:14px;margin-right:5px;text-align:center;color:${n.hasPrice?'var(--green)':'var(--red)'};font-size:8px">${n.hasPrice?'\u25CF':'\u25CB'}</span>`;
-    let row = `<tr data-path="${path}" data-depth="${depth}" style="${hidden}${isSemi?'background:rgba(79,142,247,.04)':''}">
+    let row = `<tr data-path="${path}" data-depth="${depth}" style="${hidden}${isSemi?'background:rgba(0,227,138,.04)':''}">
       <td style="padding:3px 6px;padding-left:${6+ind}px;color:${isSemi?'#c0c8dc':'#9aa3b8'};white-space:nowrap">
         ${toggle}${n.name}
         ${n.leaf&&!n.hasPrice?'<span class="badge badge-amber" style="font-size:9px;margin-left:3px">нет цены</span>':''}
@@ -3230,6 +3312,12 @@ function refreshNormVersionUI() {
     sel2.innerHTML = '<option value="current">Текущий расчёт</option>' + opts;
     sel2.value = cur;
   }
+  const sel3 = document.getElementById('vp-norm-source');
+  if (sel3) {
+    const cur = sel3.value;
+    sel3.innerHTML = '<option value="current">Текущий расчёт</option>' + opts;
+    sel3.value = cur;
+  }
   onNormVersionPick();
   // Показываем общую себестоимость продаж одной цифрой
   const tc = document.getElementById('norm-total-cost');
@@ -3462,6 +3550,197 @@ function renderChannels() {
   C._channels = channels;
 }
 
+// ══════════════════════════════════════════════════════════════════════════
+// СВЕРКА ВЫПУСКА: норматив (спецификации) vs факт (себестоимость выпуска 1С)
+// ══════════════════════════════════════════════════════════════════════════
+const V = { rows: [], fname: '' };
+
+function loadVypusk(inp) {
+  if (!inp.files[0]) return;
+  readXlsx(inp.files[0], rows => {
+    // Ищем строку шапки
+    let hdr = -1;
+    for (let i = 0; i < Math.min(rows.length, 12); i++) {
+      const j = (rows[i]||[]).map(x => norm(x)).join(' ');
+      if (j.includes('номенклат') || j.includes('модель') || j.includes('наименован')) { hdr = i; break; }
+    }
+    if (hdr < 0) hdr = 0;
+
+    // Склеиваем шапку с предыдущей строкой (двухуровневые шапки 1С)
+    const hRow = [...(rows[hdr]||[])];
+    const pRow = hdr > 0 ? (rows[hdr-1]||[]) : [];
+    const H = hRow.map((x,i) => norm(x || pRow[i] || ''));
+
+    const ci = { nom:-1, char:-1, qty:-1, total:-1, unit:-1 };
+    H.forEach((s,i) => {
+      if (!s) return;
+      if (ci.nom < 0 && (s.includes('номенклат') || s.includes('модель') || s.includes('наименован'))) { ci.nom = i; return; }
+      if (ci.char < 0 && s.includes('характер')) { ci.char = i; return; }
+      if (ci.qty < 0 && (s.includes('количест') || s.includes('кол-во') || s.includes('выпущен'))) { ci.qty = i; return; }
+      // себестоимость за единицу
+      if (ci.unit < 0 && (s.includes('ед') && (s.includes('себест') || s.includes('цена')))) { ci.unit = i; return; }
+      // итоговая себестоимость / сумма
+      if (ci.total < 0 && (s.includes('себест') || s.includes('сумма') || s.includes('стоимост'))) { ci.total = i; return; }
+    });
+    if (ci.nom < 0) ci.nom = 0;
+    // Запасной проход: колонка «Цена» без слова «ед» — считаем ценой за единицу
+    if (ci.unit < 0 && ci.total < 0) {
+      H.forEach((s,i) => { if (ci.unit < 0 && s && s.includes('цена')) ci.unit = i; });
+    }
+
+    const num = x => { const n = parseFloat(String(x==null?'':x).replace(/\s/g,'').replace(',','.')); return isNaN(n) ? null : n; };
+
+    const parsed = [];
+    for (let i = hdr + 1; i < rows.length; i++) {
+      const r = rows[i]; if (!r) continue;
+      const nom = String(r[ci.nom]||'').trim();
+      if (!nom || nom === 'nan') continue;
+      if (/^(итого|всего|total)/i.test(nom)) continue;
+
+      const qty   = ci.qty   >= 0 ? num(r[ci.qty])   : null;
+      let   total = ci.total >= 0 ? num(r[ci.total]) : null;
+      let   unit  = ci.unit  >= 0 ? num(r[ci.unit])  : null;
+      if (total == null && unit == null) continue;
+
+      const q = (qty && qty > 0) ? qty : 1;
+      if (unit == null && total != null) unit = total / q;
+      if (total == null && unit != null) total = unit * q;
+
+      parsed.push({
+        nom,
+        char: ci.char >= 0 ? String(r[ci.char]||'').trim().replace(/^nan$/i,'') : '',
+        qty: q,
+        factUnit: unit || 0,
+        factTotal: total || 0
+      });
+    }
+
+    V.rows = parsed;
+    V.fname = inp.files[0].name;
+    document.getElementById('vp-file-status').innerHTML =
+      `<div class="file-ok"><i class="ti ti-check"></i><span style="flex:1">${V.fname}</span><span style="font-weight:500">${parsed.length} позиций</span></div>`;
+    renderVypusk();
+  });
+}
+
+function renderVypusk() {
+  if (!V.rows.length) return;
+
+  // Источник норматива
+  const srcSel = document.getElementById('vp-norm-source');
+  const srcVal = srcSel ? srcSel.value : 'current';
+  let normMap;
+  if (srcVal && srcVal !== 'current' && S.normVersions && S.normVersions[srcVal]) {
+    normMap = S.normVersions[srcVal].cost;
+  } else {
+    normMap = buildNormCost();
+  }
+
+  const thr = parseFloat(document.getElementById('vp-threshold').value) || 0;
+  const q   = norm(document.getElementById('vp-q')?.value || '');
+  const f   = document.getElementById('vp-filter')?.value || 'all';
+
+  // Сопоставляем
+  const all = V.rows.map(r => {
+    const nc = lookupNormCost(normMap, r.nom, r.char);
+    const normUnit  = nc ? nc.cost : 0;
+    const normTotal = normUnit * r.qty;
+    const devUnit   = r.factUnit - normUnit;
+    const devTotal  = r.factTotal - normTotal;
+    const devPct    = normUnit > 0 ? (devUnit / normUnit * 100) : (r.factUnit > 0 ? 100 : 0);
+    return { ...r, normUnit, normTotal, devUnit, devTotal, devPct, hasNorm: !!nc && normUnit > 0 };
+  });
+
+  // Итоги считаем по всем позициям с нормативом
+  const withNorm = all.filter(x => x.hasNorm);
+  const totNorm = withNorm.reduce((s,x)=>s+x.normTotal,0);
+  const totFact = withNorm.reduce((s,x)=>s+x.factTotal,0);
+  const totDev  = totFact - totNorm;
+  const noNorm  = all.length - withNorm.length;
+  const overCnt = withNorm.filter(x => x.devPct > thr).length;
+
+  // Фильтрация для показа
+  let rows = all.filter(x => {
+    if (q && !norm(x.nom).includes(q) && !norm(x.char).includes(q)) return false;
+    if (f === 'nonorm') return !x.hasNorm;
+    if (!x.hasNorm) return f === 'all' ? true : false;
+    if (thr > 0 && Math.abs(x.devPct) < thr && f !== 'all') return false;
+    if (f === 'over')  return x.devUnit > 0;
+    if (f === 'under') return x.devUnit < 0;
+    if (thr > 0 && Math.abs(x.devPct) < thr) return false;
+    return true;
+  }).sort((a,b) => Math.abs(b.devTotal) - Math.abs(a.devTotal));
+
+  document.getElementById('vp-result').style.display = 'block';
+  document.getElementById('vp-metrics').innerHTML = `
+    <div class="metric"><div class="metric-label">Норматив итого</div><div class="metric-value">${fmtM(totNorm)}</div><div class="metric-sub">${withNorm.length} позиций</div></div>
+    <div class="metric"><div class="metric-label">Факт итого</div><div class="metric-value">${fmtM(totFact)}</div></div>
+    <div class="metric"><div class="metric-label">Отклонение</div><div class="metric-value ${totDev>0?'red':'green'}">${fmtM(totDev)}</div><div class="metric-sub">${totNorm?(totDev/totNorm*100).toFixed(1):0}%</div></div>
+    <div class="metric"><div class="metric-label">Откл &gt; ${thr}% / нет норм.</div><div class="metric-value amber">${overCnt} / ${noNorm}</div></div>`;
+
+  document.getElementById('vp-body').innerHTML = rows.map(x => {
+    const bg = !x.hasNorm ? 'background:var(--amber-bg)'
+             : (Math.abs(x.devPct) >= (thr||5) ? (x.devUnit > 0 ? 'background:var(--red-bg)' : 'background:var(--green-bg)') : '');
+    const col = x.devUnit > 0 ? 'var(--red)' : (x.devUnit < 0 ? 'var(--green)' : 'var(--text2)');
+    return `<tr style="${bg}">
+      <td>${x.nom}${!x.hasNorm ? ' <span class="badge badge-amber" style="font-size:9px">нет норматива</span>' : ''}</td>
+      <td style="color:var(--text2);font-size:12px">${x.char || '—'}</td>
+      <td class="r">${fmt(x.qty)}</td>
+      <td class="r">${x.hasNorm ? fmt(x.normUnit) : '—'}</td>
+      <td class="r">${fmt(x.factUnit)}</td>
+      <td class="r" style="color:${col};font-weight:500">${x.hasNorm ? fmt(x.devUnit) : '—'}</td>
+      <td class="r" style="color:${col}">${x.hasNorm ? x.devPct.toFixed(1)+'%' : '—'}</td>
+      <td class="r">${x.hasNorm ? fmt(x.normTotal) : '—'}</td>
+      <td class="r">${fmt(x.factTotal)}</td>
+      <td class="r" style="color:${col};font-weight:500">${x.hasNorm ? fmt(x.devTotal) : '—'}</td>
+    </tr>`;
+  }).join('') || '<tr><td colspan="10" class="no-data" style="padding:1.5rem">Нет позиций по фильтру</td></tr>';
+
+  V._all = all;
+}
+
+function exportVypusk() {
+  if (!V._all || !V._all.length) { alert('Сначала выполните сверку'); return; }
+  const wb = XLSX.utils.book_new();
+
+  const withNorm = V._all.filter(x => x.hasNorm);
+  const totNorm = withNorm.reduce((s,x)=>s+x.normTotal,0);
+  const totFact = withNorm.reduce((s,x)=>s+x.factTotal,0);
+
+  const wsSum = XLSX.utils.aoa_to_sheet([
+    ['Показатель','Значение'],
+    ['Норматив итого, ₽', +totNorm.toFixed(2)],
+    ['Факт итого, ₽', +totFact.toFixed(2)],
+    ['Отклонение, ₽', +(totFact-totNorm).toFixed(2)],
+    ['Отклонение, %', +(totNorm ? (totFact-totNorm)/totNorm*100 : 0).toFixed(1)],
+    ['Позиций с нормативом', withNorm.length],
+    ['Позиций без норматива', V._all.length - withNorm.length],
+  ]);
+  wsSum['!cols'] = [{wch:28},{wch:20}];
+  ['B2','B3','B4'].forEach(a => { if (wsSum[a]) wsSum[a].z = '#,##0.00'; });
+  if (wsSum['B5']) wsSum['B5'].z = '0.0"%"';
+  XLSX.utils.book_append_sheet(wb, wsSum, 'Итого');
+
+  const hdr = ['Модель','Характеристика','Кол-во','Норматив/ед, ₽','Факт/ед, ₽','Откл/ед, ₽','Откл, %','Норматив итого, ₽','Факт итого, ₽','Отклонение итого, ₽','Статус'];
+  const data = V._all.slice().sort((a,b)=>Math.abs(b.devTotal)-Math.abs(a.devTotal)).map(x => [
+    x.nom, x.char || '', x.qty,
+    x.hasNorm ? +x.normUnit.toFixed(2) : '',
+    +x.factUnit.toFixed(2),
+    x.hasNorm ? +x.devUnit.toFixed(2) : '',
+    x.hasNorm ? +x.devPct.toFixed(1) : '',
+    x.hasNorm ? +x.normTotal.toFixed(2) : '',
+    +x.factTotal.toFixed(2),
+    x.hasNorm ? +x.devTotal.toFixed(2) : '',
+    x.hasNorm ? (x.devUnit > 0 ? 'факт выше' : (x.devUnit < 0 ? 'факт ниже' : 'совпадает')) : 'нет норматива'
+  ]);
+  const ws = XLSX.utils.aoa_to_sheet([hdr, ...data]);
+  ws['!cols'] = [{wch:42},{wch:24},{wch:9},{wch:16},{wch:14},{wch:14},{wch:10},{wch:18},{wch:16},{wch:20},{wch:16}];
+  XLSX.utils.book_append_sheet(wb, ws, 'Сверка выпуска');
+
+  const date = new Date().toLocaleDateString('ru-RU').replace(/\./g,'-');
+  XLSX.writeFile(wb, `sverka_vypuska_${date}.xlsx`);
+}
+
 function exportChannels() {
   if (!C._channels || !C._channels.length) { alert('Сначала рассчитайте по каналам'); return; }
   const wb = XLSX.utils.book_new();
@@ -3652,7 +3931,7 @@ function exportCSV() {
   XLSX.writeFile(wb, `sebestoimost_${date}.xlsx`);
 }
 
-console.log('%c\u2713 cost.calc v3.9 \u2014 \u0444\u0430\u0439\u043b \u0437\u0430\u0433\u0440\u0443\u0436\u0435\u043d \u043f\u043e\u043b\u043d\u043e\u0441\u0442\u044c\u044e', 'color:#22c55e;font-weight:bold;font-size:14px');
+console.log('%c\u2713 IRIX COST v4.2 \u2014 \u0444\u0430\u0439\u043b \u0437\u0430\u0433\u0440\u0443\u0436\u0435\u043d \u043f\u043e\u043b\u043d\u043e\u0441\u0442\u044c\u044e', 'color:#00E38A;font-weight:bold;font-size:14px');
 window.__CALC_OK__ = true;
 </script>
 </body>
