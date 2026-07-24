@@ -194,7 +194,7 @@ select:focus{outline:none;border-color:var(--accent)}
   <!-- Topbar -->
   <header class="topbar">
     <div class="logo"><svg class="logo-mark" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" aria-label="IRIX"><polygon points="4,4 4,96 50,50" fill="#00E38A"/><polygon points="50,50 96,4 40,4" fill="#00E38A"/><polygon points="4,96 50,50 96,96" fill="#00B874"/></svg><div class="logo-text"><div class="logo-name">IRIX <b>COST</b></div><div class="logo-sub">SMART APPS BY IRINA ROMANOVA</div></div></div>
-    <div style="margin-left:.75rem;line-height:1.35"><div style="font-size:12px;color:var(--text2);font-family:var(--mono)">Себестоимость и калькуляция <span style="color:var(--accent)">v4.8</span></div><div style="font-size:10px;color:var(--text3)">умные приложения для бизнеса</div></div>
+    <div style="margin-left:.75rem;line-height:1.35"><div style="font-size:12px;color:var(--text2);font-family:var(--mono)">Себестоимость и калькуляция <span style="color:var(--accent)">v5.1</span></div><div style="font-size:10px;color:var(--text3)">умные приложения для бизнеса</div></div>
     <div class="topbar-right">
       <span id="top-status" style="font-size:11px;color:var(--text3);font-family:var(--mono)"></span>
       <button class="btn btn-sm" onclick="runCalc()" id="btn-recalc" style="display:none">↺ Обновить расчёт</button>
@@ -929,6 +929,7 @@ select:focus{outline:none;border-color:var(--accent)}
 const S = {
   sales: [],
   purchasePrices: {},   // nom_lower -> price
+  pricesByChar: {},     // nom|char -> price (цены по характеристике)
   stockPrices: {},      // nom_lower -> price
   manualPrices: {},     // nom_lower -> price (user entered, session only)
   pricebook: {},        // nom_lower -> {price, unit, comment, alias} — persisted in localStorage
@@ -1018,18 +1019,57 @@ function updatePbBadge() {
 }
 
 // ── Specs + Prices persistence ────────────────────────────────────────────
+// Проверяет, не испорчены ли спецификации (например, новый файл разобран старой версией)
+function checkSpecsHealth() {
+  const all = Object.values(S.specs || {});
+  if (!all.length) return null;
+  const empty = all.filter(s => !s.components || !s.components.length).length;
+  // Мусорные ключи: единица измерения вместо номенклатуры
+  const junk = all.filter(s => /^(шт|кг|л\.?|пог\. м|м3|м2|компл|упак)$/i.test(String(s.nom||'').trim())).length;
+  const pct = empty / all.length * 100;
+  if (junk > 5 || pct > 20) return { total: all.length, empty, junk, pct };
+  return null;
+}
+
+function showSpecsWarning(h) {
+  let el = document.getElementById('specs-broken-warning');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'specs-broken-warning';
+    el.style.cssText = 'background:var(--red-bg);border:1px solid rgba(239,68,68,.45);border-radius:var(--r2);padding:.9rem 1.15rem;margin-bottom:1rem;font-size:13px;color:var(--red)';
+    const tab = document.getElementById('tab-upload');
+    if (tab) tab.insertBefore(el, tab.firstChild);
+  }
+  el.innerHTML = `<div style="font-weight:600;margin-bottom:.3rem">⛔ Спецификации разобраны неверно</div>
+    <div style="color:var(--text2);line-height:1.6">
+      Из ${h.total} спецификаций <b style="color:var(--red)">${h.empty}</b> без состава${h.junk ? `, и ${h.junk} записей вместо номенклатуры содержат единицу измерения` : ''}.
+      Обычно это значит, что новая выгрузка была загружена старой версией приложения, и результат сохранился в кэше.
+      Себестоимость получится нулевой при зелёном статусе.
+      <div style="margin-top:.5rem">Нажмите «сбросить кэш» под карточкой спецификаций и загрузите файл заново — уже в этой версии.</div>
+    </div>`;
+  el.style.display = 'block';
+}
+
+function hideSpecsWarning() {
+  const el = document.getElementById('specs-broken-warning');
+  if (el) el.style.display = 'none';
+}
+
 function specsLoad() {
   const saved = lsLoad(LS.SPECS);
   if (saved && saved.specs && Object.keys(saved.specs).length > 0) {
     try {
     // Restore specs — convert arrays back (JSON doesn't preserve Set/Map)
     S.specs = saved.specs;
+    S.specsLayout = saved.layout || 'old';
+    S.specsCompWithChar = saved.compWithChar || 0;
     S.allMaterials = new Set(saved.allMaterials || []);
     S.ready.specs = true;
     const cnt = Object.keys(S.specs).length;
     setUploaded('uz-specs', 'us-specs', saved.fname || 'из кэша', cnt + ' спецификаций');
     document.getElementById('uz-stock').style.display = 'block';
     updateCacheLabel('specs', saved.fname, saved.date);
+    try { const h = checkSpecsHealth(); if (h) setTimeout(() => showSpecsWarning(h), 300); } catch(e) {}
     return true;
     } catch(e) { console.warn('specsLoad restore error:', e); S.specs = {}; S.allMaterials = new Set(); return false; }
   }
@@ -1038,6 +1078,8 @@ function specsLoad() {
 function specsSave(fname) {
   const ok = lsSave(LS.SPECS, {
     specs: S.specs,
+    layout: S.specsLayout || 'old',
+    compWithChar: S.specsCompWithChar || 0,
     allMaterials: [...S.allMaterials],
     fname,
     date: new Date().toLocaleDateString('ru-RU')
@@ -1054,9 +1096,12 @@ function pricesLoad() {
       for (const [k, v] of Object.entries(saved.prices)) mp[norm(k)] = v;
       S.purchasePrices = mp;
     } catch(e) { S.purchasePrices = saved.prices; }
+    S.pricesByChar = saved.byChar || {};
     S.ready.prices = true;
-    const cnt = Object.keys(S.purchasePrices).length;
-    setUploaded('uz-prices', 'us-prices', saved.fname || 'из кэша', cnt + ' позиций');
+    const wc = Object.keys(S.pricesByChar).length;
+    const cnt = Object.keys(S.purchasePrices).length + wc;
+    setUploaded('uz-prices', 'us-prices', saved.fname || 'из кэша',
+      cnt + ' позиций' + (wc ? ' · ' + wc + ' с характеристикой' : ''));
     updateCacheLabel('prices', saved.fname, saved.date);
     return true;
   }
@@ -1065,6 +1110,7 @@ function pricesLoad() {
 function pricesSave(fname) {
   const ok = lsSave(LS.PRICES, {
     prices: S.purchasePrices,
+    byChar: S.pricesByChar || {},
     fname,
     date: new Date().toLocaleDateString('ru-RU')
   });
@@ -1132,8 +1178,9 @@ if (specsRestored || pricesRestored) {
 }
 
 // effective price: pricebook > manual > stock > purchase
-function getPrice(nom) {
+function getPrice(nom, char) {
   const k = norm(nom);
+  const ch = norm(char || '');
   // Если задан алиас — берём цену от него (рекурсивно, не более 3 уровней)
   function resolveAlias(key, depth) {
     if (depth > 3) return key;
@@ -1147,6 +1194,16 @@ function getPrice(nom) {
   const rk = resolveAlias(k, 0); // resolved key (может быть другим если есть алиас)
   const wasAliased = rk !== k;
 
+  // ── Приоритет 0: цена по характеристике ────────────────────────────────
+  // Ткань «Велюр серый 83» стоит 217, «Кожзам ALBA» — 2051 при одной норме.
+  // Поэтому характеристика проверяется раньше усреднённой цены.
+  if (ch) {
+    const pbc = S.pricebook[k + '|' + ch];
+    if (pbc && pbc.price > 0) return { price: pbc.price, src: 'pricebook', char: 'exact' };
+    const bc = S.pricesByChar && S.pricesByChar[k + '|' + ch];
+    if (bc > 0) return { price: bc, src: 'purchase', char: 'exact' };
+  }
+
   // Справочник только если цена > 0
   if (S.pricebook[rk] != null && S.pricebook[rk].price > 0) return { price: S.pricebook[rk].price, src: wasAliased ? 'alias' : 'pricebook', alias: wasAliased ? S.pricebook[k]?.alias : null };
   if (S.pricebook[k] != null && S.pricebook[k].price > 0) return { price: S.pricebook[k].price, src: 'pricebook' };
@@ -1156,6 +1213,16 @@ function getPrice(nom) {
   // Fallback к оригинальному ключу
   if (S.stockPrices[k] != null && S.stockPrices[k] > 0) return { price: S.stockPrices[k], src: 'stock' };
   if (S.purchasePrices[k] != null && S.purchasePrices[k] > 0) return { price: S.purchasePrices[k], src: 'purchase' };
+
+  // ── Последний шанс: усреднение по всем характеристикам этой номенклатуры ──
+  if (S.pricesByChar) {
+    const pref = k + '|';
+    let sum = 0, cnt = 0;
+    for (const kk in S.pricesByChar) {
+      if (kk.startsWith(pref)) { sum += S.pricesByChar[kk]; cnt++; }
+    }
+    if (cnt) return { price: sum / cnt, src: 'purchase', char: cnt > 1 ? 'avg' : 'exact', variants: cnt };
+  }
   return { price: 0, src: 'none' };
 }
 
@@ -1240,21 +1307,31 @@ function loadPrices(inp) {
   if (!inp.files[0]) return;
   readXlsx(inp.files[0], rows => {
     const hdr = findHeader(rows);
-    const ci = { nom: -1, price: -1 };
+    const ci = { nom: -1, char: -1, price: -1 };
     (rows[hdr] || []).forEach((c, i) => {
       const s = norm(c);
-      if (s.includes('номенклат')) ci.nom = i;
-      else if (s.includes('цена') || s.includes('стоим')) ci.price = i;
+      if (ci.nom < 0 && s.includes('номенклат')) { ci.nom = i; return; }
+      if (ci.char < 0 && s.includes('характер')) { ci.char = i; return; }
+      if (ci.price < 0 && (s.includes('цена') || s.includes('стоим'))) { ci.price = i; return; }
     });
-    S.purchasePrices = {};
+    S.purchasePrices = {};      // ключ: norm(номенклатура) — без характеристики
+    S.pricesByChar  = {};       // ключ: norm(ном)|norm(характеристика)
+    let withChar = 0;
     for (let i = hdr + 1; i < rows.length; i++) {
       const r = rows[i];
       if (!r || !r[ci.nom]) continue;
       const p = +String(r[ci.price] || '0').replace(',', '.') || 0;
-      if (p > 0) S.purchasePrices[norm(r[ci.nom])] = p;
+      if (!(p > 0)) continue;
+      const nk = norm(r[ci.nom]);
+      let ch = ci.char >= 0 ? norm(r[ci.char]) : '';
+      if (ch === 'nan' || ch === '<без характеристики>') ch = '';
+      if (ch) { S.pricesByChar[nk + '|' + ch] = p; withChar++; }
+      else    { S.purchasePrices[nk] = p; }
     }
     S.ready.prices = true;
-    setUploaded('uz-prices', 'us-prices', inp.files[0].name, Object.keys(S.purchasePrices).length + ' позиций');
+    const total = Object.keys(S.purchasePrices).length + withChar;
+    setUploaded('uz-prices', 'us-prices', inp.files[0].name,
+      total + ' позиций' + (withChar ? ' · ' + withChar + ' с характеристикой' : ''));
     pricesSave(inp.files[0].name);
     checkReady();
   });
@@ -1267,23 +1344,73 @@ function loadSpecs(inp) {
   readXlsx(inp.files[0], rows => {
     S.specs = {};
     let current = null;
+
+    // Определяем раскладку: новая выгрузка содержит «Спецификация.Состав.Номенклатура»
+    let newLayout = false, iCompName = 6, iCompChar = 5, iQty = 3, iUnit = 0;
+    for (let i = 0; i < Math.min(rows.length, 10); i++) {
+      const rr = (rows[i] || []).map(x => norm(x));
+      const j = rr.findIndex(s => s.includes('состав.номенклатура'));
+      if (j >= 0) {
+        newLayout = true;
+        iCompName = j;
+        const jc = rr.findIndex(s => s.includes('состав.характер'));
+        const jq = rr.findIndex(s => s.includes('состав.количество'));
+        const ju = rr.findIndex(s => s.includes('состав.ед'));
+        if (jc >= 0) iCompChar = jc;
+        if (jq >= 0) iQty = jq;
+        if (ju >= 0) iUnit = ju;
+        break;
+      }
+    }
+    S.specsLayout = newLayout ? 'new' : 'old';
+    let compWithChar = 0;
+
     for (let i = 7; i < rows.length; i++) {
       const r = rows[i];
       if (!r) continue;
-      const c0 = String(r[0] || '').trim();
-      const c3 = String(r[3] || '').trim();
-      const c5 = String(r[5] || '').trim();
-      if (!c0 || c0 === 'nan') continue;
-      const num = parseFloat(c5.replace(',', '.'));
-      if (!isNaN(num) && c5 !== '') {
-        if (current) S.specs[current].components.push({ name: c0, unit: c3 !== 'nan' ? c3 : '', qty: num });
-      } else {
-        const char = (c3 !== 'nan' && c3) ? c3 : '';
+
+      if (newLayout) {
+        // Строка компонента — заполнена колонка «Спецификация.Состав.Номенклатура»
+        const cname = String(r[iCompName] || '').trim();
+        const c0    = String(r[0] || '').trim();
+        if (cname && cname !== 'nan') {
+          const q = parseFloat(String(r[iQty] || '').replace(',', '.'));
+          if (current && !isNaN(q)) {
+            const cch = String(r[iCompChar] || '').trim().replace(/^nan$/i, '');
+            if (cch) compWithChar++;
+            S.specs[current].components.push({
+              name: cname,
+              char: cch,
+              unit: String(r[iUnit] || '').trim().replace(/^nan$/i, ''),
+              qty: q
+            });
+          }
+          continue;
+        }
+        // Строка изделия
+        if (!c0 || c0 === 'nan') continue;
+        const char = String(r[3] || '').trim().replace(/^nan$/i, '');
         const key = norm(c0) + '|' + norm(char);
         current = key;
         if (!S.specs[key]) S.specs[key] = { nom: c0, char, components: [] };
+      } else {
+        // Старая раскладка (без характеристики компонента)
+        const c0 = String(r[0] || '').trim();
+        const c3 = String(r[3] || '').trim();
+        const c5 = String(r[5] || '').trim();
+        if (!c0 || c0 === 'nan') continue;
+        const num = parseFloat(c5.replace(',', '.'));
+        if (!isNaN(num) && c5 !== '') {
+          if (current) S.specs[current].components.push({ name: c0, char: '', unit: c3 !== 'nan' ? c3 : '', qty: num });
+        } else {
+          const char = (c3 !== 'nan' && c3) ? c3 : '';
+          const key = norm(c0) + '|' + norm(char);
+          current = key;
+          if (!S.specs[key]) S.specs[key] = { nom: c0, char, components: [] };
+        }
       }
     }
+    S.specsCompWithChar = compWithChar;
     // collect all leaf materials
     S.allMaterials = new Set();
     collectLeaves(new Set());
@@ -1293,7 +1420,11 @@ function loadSpecs(inp) {
       (sp.components || []).forEach(c => S.allMaterials.add(norm(c.name)));
     });
     S.ready.specs = true;
-    setUploaded('uz-specs', 'us-specs', inp.files[0].name, Object.keys(S.specs).length + ' спецификаций');
+    const health = checkSpecsHealth();
+    if (health) showSpecsWarning(health); else hideSpecsWarning();
+    const okCnt = Object.values(S.specs).filter(s => s.components && s.components.length).length;
+    setUploaded('uz-specs', 'us-specs', inp.files[0].name,
+      okCnt + ' спецификаций' + (compWithChar ? ' · ' + compWithChar + ' с характеристикой' : ''));
     document.getElementById('uz-stock').style.display = 'block';
     applyUserSpecs();
     specsSave(inp.files[0].name);
@@ -1369,38 +1500,53 @@ function loadStock(inp) {
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
-function findSpec(nom, char) {
+// Возвращает { key, how } — how: exact | nochar | only | first | null
+// how === 'first' означает догадку: у номенклатуры несколько вариантов,
+// а характеристика не совпала ни с одним — это источник неверных расчётов.
+function findSpecEx(nom, char) {
   const n = norm(nom);
   const c = norm(char);
-  // 1. Точное совпадение имени + характеристики
   const k1 = n + '|' + c;
-  if (S.specs[k1]) return k1;
-  // 2. Совпадение имени без характеристики
+  if (S.specs[k1]) return { key: k1, how: 'exact' };
   const k2 = n + '|';
-  if (S.specs[k2]) return k2;
-  // 3. Имя совпадает, характеристика любая — берём первую
-  //    (полуфабрикат в составе может быть без характеристики,
-  //     а его спецификация зарегистрирована с характеристикой)
-  for (const k of Object.keys(S.specs)) {
-    if (k.startsWith(n + '|')) return k;
-  }
-  return null;
+  if (S.specs[k2]) return { key: k2, how: c ? 'nochar' : 'exact' };
+  const cands = [];
+  for (const k of Object.keys(S.specs)) if (k.startsWith(n + '|')) cands.push(k);
+  if (!cands.length) return { key: null, how: null };
+  if (cands.length === 1) return { key: cands[0], how: 'only' };
+  return { key: cands[0], how: 'first', variants: cands.length };
+}
+
+function findSpec(nom, char) {
+  return findSpecEx(nom, char).key;
 }
 
 function calcCost(nom, char, visited, depth) {
   if (depth > 8) return { cost: 0, full: false, missing: [nom + '(глубина)'], tree: [] };
-  const key = findSpec(nom, char);
+  const fs = findSpecEx(nom, char);
+  const key = fs.key;
   if (!key) {
-    const { price, src } = getPrice(nom);
-    return { cost: price, full: price > 0, missing: price > 0 ? [] : [nom], tree: [{ name: nom, unit: '', qty: 1, cost: price, depth, leaf: true, hasPrice: price > 0, src }] };
+    const g = getPrice(nom, char);
+    return { cost: g.price, full: g.price > 0, missing: g.price > 0 ? [] : [nom],
+      tree: [{ name: nom, char: char || '', unit: '', qty: 1, cost: g.price, depth, leaf: true,
+               hasPrice: g.price > 0, src: g.src, charMatch: g.char || null, variants: g.variants || 0 }] };
   }
   const vk = norm(nom) + '|' + norm(char);
   if (visited.has(vk)) return { cost: 0, full: false, missing: ['ЦИКЛ:' + nom], tree: [] };
   const nv = new Set(visited); nv.add(vk);
   const sp = S.specs[key];
+  // Спецификация без состава — это сломанные данные, а не «всё посчитано».
+  // Раньше такая позиция давала себестоимость 0 с зелёным статусом.
+  if (!sp.components || !sp.components.length) {
+    return { cost: 0, full: false, missing: ['ПУСТАЯ СПЕЦИФИКАЦИЯ: ' + nom],
+             tree: [{ name: nom, char: char || '', unit: '', qty: 1, cost: 0, depth,
+                      leaf: true, hasPrice: false, src: 'none', emptySpec: true }] };
+  }
   let total = 0, full = true, missing = [], tree = [];
   for (const comp of sp.components) {
-    const sub = calcCost(comp.name, comp.char || '', nv, depth + 1);
+    // Характеристика компонента; если пусто — наследуем от родителя
+    const cch = comp.char || char || '';
+    const sub = calcCost(comp.name, cch, nv, depth + 1);
     const lineC = sub.cost * comp.qty;
     total += lineC;
     if (!sub.full) full = false;
@@ -1408,9 +1554,14 @@ function calcCost(nom, char, visited, depth) {
     // Полуфабрикат (есть спецификация) всегда раскрывается, даже если 1 компонент.
     // leaf=true только для настоящего сырья без спецификации.
     const isSemifab = sub.tree.length > 0 && !(sub.tree.length === 1 && sub.tree[0].leaf && norm(sub.tree[0].name) === norm(comp.name));
-    tree.push({ name: comp.name, unit: comp.unit, qty: comp.qty, cost: lineC, depth, leaf: !isSemifab, hasPrice: sub.full, src: sub.tree[0]?.src, children: isSemifab ? sub.tree : [] });
+    const sfs = isSemifab ? findSpecEx(comp.name, cch) : null;
+    tree.push({ name: comp.name, char: cch, unit: comp.unit, qty: comp.qty, cost: lineC, depth,
+                leaf: !isSemifab, hasPrice: sub.full, src: sub.tree[0]?.src,
+                charMatch: sub.tree[0]?.charMatch || null,
+                specHow: sfs ? sfs.how : null, specVariants: sfs ? (sfs.variants || 0) : 0,
+                children: isSemifab ? sub.tree : [] });
   }
-  return { cost: total, full, missing: [...new Set(missing)], tree };
+  return { cost: total, full, missing: [...new Set(missing)], tree, specHow: fs.how, specVariants: fs.variants || 0 };
 }
 
 // ── Run Calc ─────────────────────────────────────────────────────────────────
@@ -1817,6 +1968,10 @@ function renderTreeRows(nodes, total, depth, parentPath) {
     let html = `<tr class="tree-row" data-path="${path}" data-depth="${depth}" style="${hidden}${isSemi ? 'background:rgba(0,227,138,.05)' : ''}">
       <td style="padding-left:${8 + ind}px;color:${nameColor};font-weight:${nameWeight};white-space:nowrap">
         ${toggle}${n.name}
+        ${n.char ? `<span style="color:var(--accent);font-size:10px;margin-left:5px">[${n.char}]</span>` : ''}
+        ${n.specHow === 'first' ? `<span class="badge badge-amber" style="margin-left:4px;font-size:9px" title="Характеристика не совпала ни с одним вариантом — взят первый. Проверьте характеристику в спецификации.">⚠ вариант наугад (из ${n.specVariants})</span>` : ''}
+        ${n.charMatch === 'avg' ? `<span class="badge badge-amber" style="margin-left:4px;font-size:9px" title="Цена усреднена по ${n.variants} характеристикам — точной не нашлось">⚠ цена средняя</span>` : ''}
+        ${n.charMatch === 'exact' ? `<span class="badge badge-green" style="margin-left:4px;font-size:9px" title="Цена найдена точно по характеристике">✓</span>` : ''}
         ${isSemi ? '<span class="badge badge-blue" style="margin-left:4px;font-size:9px">п/ф</span>' : ''}
         ${isSemi && (() => { const sk = findSpec(n.name, ''); return sk && S.specs[sk] && S.specs[sk]._user; })() ? '<span class="badge badge-amber" style="margin-left:3px;font-size:9px">своя</span>' : ''}
       </td>
@@ -4258,7 +4413,7 @@ function exportCSV() {
   XLSX.writeFile(wb, `sebestoimost_${date}.xlsx`);
 }
 
-console.log('%c\u2713 IRIX COST v4.8 \u2014 \u0444\u0430\u0439\u043b \u0437\u0430\u0433\u0440\u0443\u0436\u0435\u043d \u043f\u043e\u043b\u043d\u043e\u0441\u0442\u044c\u044e', 'color:#00E38A;font-weight:bold;font-size:14px');
+console.log('%c\u2713 IRIX COST v5.1 \u2014 \u0444\u0430\u0439\u043b \u0437\u0430\u0433\u0440\u0443\u0436\u0435\u043d \u043f\u043e\u043b\u043d\u043e\u0441\u0442\u044c\u044e', 'color:#00E38A;font-weight:bold;font-size:14px');
 window.__CALC_OK__ = true;
 </script>
 </body>
