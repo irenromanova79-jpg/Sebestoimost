@@ -1061,6 +1061,7 @@ function specsLoad() {
     try {
     // Restore specs — convert arrays back (JSON doesn't preserve Set/Map)
     S.specs = saved.specs;
+    invalidateSpecIndex();
     S.specsLayout = saved.layout || 'old';
     S.specsCompWithChar = saved.compWithChar || 0;
     S.allMaterials = new Set(saved.allMaterials || []);
@@ -1149,6 +1150,7 @@ function applyUserSpecs() {
     (sp.components || []).forEach(c => S.allMaterials.add(norm(c.name)));
     S.allMaterials.delete(norm(sp.nom)); // теперь это п/ф, а не сырьё
   });
+  invalidateSpecIndex();
 }
 
 // Init on load — всё в try-catch чтобы ошибка не блокировала приложение
@@ -1236,12 +1238,21 @@ function switchTab(name) {
 }
 
 // ── File reading ────────────────────────────────────────────────────────────
-function readXlsx(file, cb) {
+function readXlsx(file, cb, onError) {
+  const fail = msg => {
+    console.error('readXlsx:', msg);
+    if (onError) onError(msg);
+    else alert('Не удалось прочитать файл: ' + msg);
+  };
+  if (typeof XLSX === 'undefined') { fail('библиотека XLSX не загрузилась (нет интернета?)'); return; }
   const r = new FileReader();
+  r.onerror = () => fail('ошибка чтения файла');
   r.onload = e => {
-    const wb = XLSX.read(e.target.result, { type: 'array' });
-    const ws = wb.Sheets[wb.SheetNames[0]];
-    cb(XLSX.utils.sheet_to_json(ws, { header: 1 }));
+    try {
+      const wb = XLSX.read(e.target.result, { type: 'array' });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      cb(XLSX.utils.sheet_to_json(ws, { header: 1 }));
+    } catch (err) { fail(err && err.message ? err.message : String(err)); }
   };
   r.readAsArrayBuffer(file);
 }
@@ -1341,7 +1352,10 @@ function loadPrices(inp) {
 function loadSpecs(inp) {
   if (!inp.files[0]) return;
   document.getElementById('us-specs').textContent = 'Читаем...';
+  const specsFail = msg => { document.getElementById('us-specs').textContent = '⚠ ' + msg; };
   readXlsx(inp.files[0], rows => {
+    try {
+    const t0 = performance.now();
     S.specs = {};
     let current = null;
 
@@ -1411,11 +1425,11 @@ function loadSpecs(inp) {
       }
     }
     S.specsCompWithChar = compWithChar;
-    // collect all leaf materials
+    invalidateSpecIndex();
+    // Раньше здесь вызывался collectLeaves() — полный обход дерева от КАЖДОЙ спецификации
+    // с visited.delete() после рекурсии. На общих узлах это давало экспоненциальный перебор
+    // и подвешивало вкладку на «Читаем...». Список ниже даёт тот же результат за один проход.
     S.allMaterials = new Set();
-    collectLeaves(new Set());
-    // Дополнительно добавляем ВСЕ компоненты всех спецификаций
-    // (collectLeaves может пропускать некоторые материалы при глубокой вложенности)
     Object.values(S.specs).forEach(sp => {
       (sp.components || []).forEach(c => S.allMaterials.add(norm(c.name)));
     });
@@ -1430,7 +1444,13 @@ function loadSpecs(inp) {
     specsSave(inp.files[0].name);
     fillProdDatalist();
     checkReady();
-  });
+    console.log('Спецификации разобраны за', Math.round(performance.now() - t0), 'мс;',
+                rows.length, 'строк →', Object.keys(S.specs).length, 'спецификаций');
+    } catch (err) {
+      console.error('loadSpecs:', err);
+      specsFail('ошибка разбора: ' + (err && err.message ? err.message : String(err)));
+    }
+  }, specsFail);
 }
 
 function collectLeaves(visited) {
@@ -1503,6 +1523,19 @@ function loadStock(inp) {
 // Возвращает { key, how } — how: exact | nochar | only | first | null
 // how === 'first' означает догадку: у номенклатуры несколько вариантов,
 // а характеристика не совпала ни с одним — это источник неверных расчётов.
+// Индекс: norm(nom) -> [ключи спецификаций]. Строится один раз после изменения S.specs.
+// Без него findSpecEx перебирал Object.keys(S.specs) на КАЖДЫЙ узел дерева — O(n) на вызов,
+// из-за чего разбор и расчёт больших выгрузок вставали намертво.
+function rebuildSpecIndex() {
+  const idx = {};
+  for (const k of Object.keys(S.specs)) {
+    const n = k.slice(0, k.lastIndexOf('|'));
+    (idx[n] || (idx[n] = [])).push(k);
+  }
+  S.specIndex = idx;
+}
+function invalidateSpecIndex() { S.specIndex = null; }
+
 function findSpecEx(nom, char) {
   const n = norm(nom);
   const c = norm(char);
@@ -1510,8 +1543,8 @@ function findSpecEx(nom, char) {
   if (S.specs[k1]) return { key: k1, how: 'exact' };
   const k2 = n + '|';
   if (S.specs[k2]) return { key: k2, how: c ? 'nochar' : 'exact' };
-  const cands = [];
-  for (const k of Object.keys(S.specs)) if (k.startsWith(n + '|')) cands.push(k);
+  if (!S.specIndex) rebuildSpecIndex();
+  const cands = S.specIndex[n] || [];
   if (!cands.length) return { key: null, how: null };
   if (cands.length === 1) return { key: cands[0], how: 'only' };
   return { key: cands[0], how: 'first', variants: cands.length };
@@ -2580,6 +2613,7 @@ function deleteUserSpec() {
   delete S.userSpecs[_specEditKey + '|'];
   delete S.userSpecs[_specEditKey];
   delete S.specs[_specEditKey + '|'];
+  invalidateSpecIndex();
   userSpecsSave();
   closeSpecEditor();
   if (S.calcRows.length) runCalc(true);
@@ -3370,6 +3404,7 @@ function exportCalcVersion() {
     S.stockPrices = v.stockPrices || {};
     S.manualPrices = v.manualPrices || {};
     S.specs = JSON.parse(JSON.stringify(bak.specs || {}));
+    invalidateSpecIndex();
     applyUserSpecs();
     const sales = v.sales || [];
     rows = sales.map(s => {
@@ -3386,6 +3421,7 @@ function exportCalcVersion() {
     S.pricebook = bak.pricebook; S.userSpecs = bak.userSpecs;
     S.purchasePrices = bak.purchasePrices; S.stockPrices = bak.stockPrices;
     S.manualPrices = bak.manualPrices; S.specs = bak.specs;
+    invalidateSpecIndex();
   }
 
   const wb = XLSX.utils.book_new();
