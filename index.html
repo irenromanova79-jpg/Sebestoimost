@@ -194,7 +194,7 @@ select:focus{outline:none;border-color:var(--accent)}
   <!-- Topbar -->
   <header class="topbar">
     <div class="logo"><svg class="logo-mark" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" aria-label="IRIX"><polygon points="4,4 4,96 50,50" fill="#00E38A"/><polygon points="50,50 96,4 40,4" fill="#00E38A"/><polygon points="4,96 50,50 96,96" fill="#00B874"/></svg><div class="logo-text"><div class="logo-name">IRIX <b>COST</b></div><div class="logo-sub">SMART APPS BY IRINA ROMANOVA</div></div></div>
-    <div style="margin-left:.75rem;line-height:1.35"><div style="font-size:12px;color:var(--text2);font-family:var(--mono)">Себестоимость и калькуляция <span style="color:var(--accent)">v4.2</span></div><div style="font-size:10px;color:var(--text3)">умные приложения для бизнеса</div></div>
+    <div style="margin-left:.75rem;line-height:1.35"><div style="font-size:12px;color:var(--text2);font-family:var(--mono)">Себестоимость и калькуляция <span style="color:var(--accent)">v4.8</span></div><div style="font-size:10px;color:var(--text3)">умные приложения для бизнеса</div></div>
     <div class="topbar-right">
       <span id="top-status" style="font-size:11px;color:var(--text3);font-family:var(--mono)"></span>
       <button class="btn btn-sm" onclick="runCalc()" id="btn-recalc" style="display:none">↺ Обновить расчёт</button>
@@ -740,6 +740,10 @@ select:focus{outline:none;border-color:var(--accent)}
         <div style="display:flex;gap:.5rem;margin-bottom:.75rem;align-items:center;flex-wrap:wrap">
           <span style="font-size:13px;font-weight:500">Сверка по моделям</span>
           <input type="search" class="inp" style="width:220px;margin-left:.5rem" placeholder="Поиск модели..." id="vp-q" oninput="renderVypusk()">
+          <select id="vp-mode" onchange="renderVypusk()" title="В каком виде показывать материалы">
+            <option value="unit" selected>на 1 единицу</option>
+            <option value="total">на весь выпуск</option>
+          </select>
           <select id="vp-filter" onchange="renderVypusk()">
             <option value="all">Все позиции</option>
             <option value="over">Факт выше норматива</option>
@@ -765,6 +769,35 @@ select:focus{outline:none;border-color:var(--accent)}
             </tr></thead>
             <tbody id="vp-body"></tbody>
           </table>
+        </div>
+
+        <!-- Рабочий список: что поправить в спецификациях -->
+        <div style="margin-top:1.5rem">
+          <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.6rem;flex-wrap:wrap">
+            <span style="font-size:14px;font-weight:600">⚠ Что поправить в спецификациях</span>
+            <span id="vp-err-count" style="font-size:11px;color:var(--text3)"></span>
+            <span class="toolbar-spacer"></span>
+            <select id="vp-err-type" onchange="renderVypusk()">
+              <option value="all">Все расхождения</option>
+              <option value="nonorm">Списано, но нет в спецификации</option>
+              <option value="nofact">Есть в спецификации, не списано</option>
+            </select>
+            <button class="btn btn-sm" onclick="exportVypuskErrors()">↓ Список ошибок xlsx</button>
+          </div>
+          <div class="card" style="padding:0;overflow:hidden">
+            <table>
+              <thead><tr>
+                <th>Материал</th>
+                <th>Тип расхождения</th>
+                <th class="r">Моделей</th>
+                <th class="r">Сумма факт, ₽</th>
+                <th class="r">Сумма норматив, ₽</th>
+                <th class="r">Влияние, ₽</th>
+                <th>В каких моделях</th>
+              </tr></thead>
+              <tbody id="vp-err-body"></tbody>
+            </table>
+          </div>
         </div>
       </div>
     </div>
@@ -3558,67 +3591,121 @@ const V = { rows: [], fname: '' };
 function loadVypusk(inp) {
   if (!inp.files[0]) return;
   readXlsx(inp.files[0], rows => {
-    // Ищем строку шапки
+    const num = x => { const n = parseFloat(String(x==null?'':x).replace(/\s/g,'').replace(',','.')); return isNaN(n) ? null : n; };
+
+    // ── Ищем шапку ────────────────────────────────────────────────────────
     let hdr = -1;
     for (let i = 0; i < Math.min(rows.length, 12); i++) {
       const j = (rows[i]||[]).map(x => norm(x)).join(' ');
-      if (j.includes('номенклат') || j.includes('модель') || j.includes('наименован')) { hdr = i; break; }
+      if (j.includes('количество продукции') || j.includes('номенклат') || j.includes('подразделен') || j.includes('модель') || j.includes('наименован')) { hdr = i; break; }
     }
     if (hdr < 0) hdr = 0;
+    const H = (rows[hdr]||[]).map(x => norm(x));
 
-    // Склеиваем шапку с предыдущей строкой (двухуровневые шапки 1С)
-    const hRow = [...(rows[hdr]||[])];
-    const pRow = hdr > 0 ? (rows[hdr-1]||[]) : [];
-    const H = hRow.map((x,i) => norm(x || pRow[i] || ''));
+    // ── Формат 1С «Себестоимость выпуска» ────────────────────────────────
+    // Подразделение | Количество продукции | Количество | Сумма | Себестоимость ед.
+    // Строка модели  — заполнено «Количество продукции»
+    // Строки под ней — материалы (заполнено «Количество»)
+    const iProdQty = H.findIndex(s => s.includes('количество продукции'));
+    let parsed = [], groups = 0, isVypuskFormat = iProdQty >= 0;
 
-    const ci = { nom:-1, char:-1, qty:-1, total:-1, unit:-1 };
-    H.forEach((s,i) => {
-      if (!s) return;
-      if (ci.nom < 0 && (s.includes('номенклат') || s.includes('модель') || s.includes('наименован'))) { ci.nom = i; return; }
-      if (ci.char < 0 && s.includes('характер')) { ci.char = i; return; }
-      if (ci.qty < 0 && (s.includes('количест') || s.includes('кол-во') || s.includes('выпущен'))) { ci.qty = i; return; }
-      // себестоимость за единицу
-      if (ci.unit < 0 && (s.includes('ед') && (s.includes('себест') || s.includes('цена')))) { ci.unit = i; return; }
-      // итоговая себестоимость / сумма
-      if (ci.total < 0 && (s.includes('себест') || s.includes('сумма') || s.includes('стоимост'))) { ci.total = i; return; }
-    });
-    if (ci.nom < 0) ci.nom = 0;
-    // Запасной проход: колонка «Цена» без слова «ед» — считаем ценой за единицу
-    if (ci.unit < 0 && ci.total < 0) {
-      H.forEach((s,i) => { if (ci.unit < 0 && s && s.includes('цена')) ci.unit = i; });
-    }
+    if (isVypuskFormat) {
+      const iName = 0;
+      const iQty  = H.findIndex(s => s === 'количество' || (s.includes('количест') && !s.includes('продукц')));
+      const iSum  = H.findIndex(s => s.includes('сумма'));
+      const iUnit = H.findIndex(s => s.includes('себестоимост') && s.includes('ед'));
 
-    const num = x => { const n = parseFloat(String(x==null?'':x).replace(/\s/g,'').replace(',','.')); return isNaN(n) ? null : n; };
+      // Данные начинаются после вложенных подзаголовков (Продукция / Номенклатура)
+      let start = hdr + 1;
+      while (start < rows.length) {
+        const r = rows[start] || [];
+        const only0 = String(r[iName]||'').trim();
+        const hasNums = r.some((v,k) => k > 0 && num(v) != null);
+        if (only0 && !hasNums && norm(only0).match(/^(продукция|номенклатура)$/)) { start++; continue; }
+        break;
+      }
 
-    const parsed = [];
-    for (let i = hdr + 1; i < rows.length; i++) {
-      const r = rows[i]; if (!r) continue;
-      const nom = String(r[ci.nom]||'').trim();
-      if (!nom || nom === 'nan') continue;
-      if (/^(итого|всего|total)/i.test(nom)) continue;
+      let cur = null;
+      for (let i = start; i < rows.length; i++) {
+        const r = rows[i]; if (!r) continue;
+        const name = String(r[iName]||'').trim();
+        if (!name || name === 'nan') continue;
+        if (/^(итого|всего|total)/i.test(name)) continue;
 
-      const qty   = ci.qty   >= 0 ? num(r[ci.qty])   : null;
-      let   total = ci.total >= 0 ? num(r[ci.total]) : null;
-      let   unit  = ci.unit  >= 0 ? num(r[ci.unit])  : null;
-      if (total == null && unit == null) continue;
+        const pq = iProdQty >= 0 ? num(r[iProdQty]) : null;
+        const q  = iQty  >= 0 ? num(r[iQty])  : null;
+        const sm = iSum  >= 0 ? num(r[iSum])  : null;
+        const un = iUnit >= 0 ? num(r[iUnit]) : null;
 
-      const q = (qty && qty > 0) ? qty : 1;
-      if (unit == null && total != null) unit = total / q;
-      if (total == null && unit != null) total = unit * q;
-
-      parsed.push({
-        nom,
-        char: ci.char >= 0 ? String(r[ci.char]||'').trim().replace(/^nan$/i,'') : '',
-        qty: q,
-        factUnit: unit || 0,
-        factTotal: total || 0
+        if (pq != null) {
+          // строка модели
+          cur = { nom: name, char: '', qty: pq, factTotal: sm || 0,
+                  factUnit: un != null ? un : (pq > 0 ? (sm||0)/pq : 0), mats: [] };
+          parsed.push(cur);
+        } else if (q != null) {
+          // материал внутри модели
+          if (cur) cur.mats.push({ name, qty: q, sum: sm || 0, unit: un || 0 });
+        } else if (sm != null) {
+          groups++; // строка подразделения / итога
+        }
+      }
+    } else {
+      // ── Универсальный разбор (другие форматы) ──────────────────────────
+      const ci = { nom:-1, char:-1, qty:-1, total:-1, unit:-1 };
+      H.forEach((s,i) => {
+        if (!s) return;
+        if (ci.nom < 0 && (s.includes('номенклат') || s.includes('модель') || s.includes('наименован'))) { ci.nom = i; return; }
+        if (ci.char < 0 && s.includes('характер')) { ci.char = i; return; }
+        if (ci.qty < 0 && (s.includes('количест') || s.includes('кол-во') || s.includes('выпущен'))) { ci.qty = i; return; }
+        if (ci.unit < 0 && (s.includes('ед') && (s.includes('себест') || s.includes('цена')))) { ci.unit = i; return; }
+        if (ci.total < 0 && (s.includes('себест') || s.includes('сумма') || s.includes('стоимост'))) { ci.total = i; return; }
       });
+      if (ci.unit < 0 && ci.total < 0) H.forEach((s,i) => { if (ci.unit < 0 && s && s.includes('цена')) ci.unit = i; });
+      if (ci.nom < 0) ci.nom = 0;
+
+      for (let i = hdr + 1; i < rows.length; i++) {
+        const r = rows[i]; if (!r) continue;
+        const nom = String(r[ci.nom]||'').trim();
+        if (!nom || nom === 'nan') continue;
+        if (/^(итого|всего|total)/i.test(nom)) continue;
+        const qty = ci.qty >= 0 ? num(r[ci.qty]) : null;
+        let total = ci.total >= 0 ? num(r[ci.total]) : null;
+        let unit  = ci.unit  >= 0 ? num(r[ci.unit])  : null;
+        if (total == null && unit == null) continue;
+        const q = (qty && qty > 0) ? qty : 1;
+        if (unit == null) unit = total / q;
+        if (total == null) total = unit * q;
+        parsed.push({ nom, char: ci.char >= 0 ? String(r[ci.char]||'').trim().replace(/^nan$/i,'') : '',
+                      qty: q, factUnit: unit || 0, factTotal: total || 0, mats: [] });
+      }
+      // отсев строк-групп (сумма = сумме строк под ней)
+      const drop = new Array(parsed.length).fill(false);
+      for (let i = 0; i < parsed.length; i++) {
+        const t = parsed[i].factTotal; if (!(t > 0)) continue;
+        let s = 0;
+        for (let j = i + 1; j < parsed.length; j++) {
+          s += parsed[j].factTotal || 0;
+          if (Math.abs(s - t) < Math.max(1, t*0.001)) { drop[i] = true; break; }
+          if (s > t) break;
+        }
+      }
+      groups = drop.filter(Boolean).length;
+      parsed = parsed.filter((_,i) => !drop[i]);
     }
 
     V.rows = parsed;
     V.fname = inp.files[0].name;
-    document.getElementById('vp-file-status').innerHTML =
-      `<div class="file-ok"><i class="ti ti-check"></i><span style="flex:1">${V.fname}</span><span style="font-weight:500">${parsed.length} позиций</span></div>`;
+    const st = document.getElementById('vp-file-status');
+    if (!parsed.length) {
+      st.innerHTML = `<div style="background:var(--amber-bg);border:1px solid rgba(245,158,11,.3);border-radius:var(--r);padding:.6rem .85rem;font-size:12px;color:var(--amber)">
+        ⚠ В файле <b>${V.fname}</b> не удалось распознать строки.<br>
+        Шапка (строка ${hdr+1}): <span style="font-family:var(--mono)">${H.filter(Boolean).slice(0,10).join(' | ') || '(пусто)'}</span>
+      </div>`;
+    } else {
+      const matCnt = parsed.reduce((s,p) => s + (p.mats ? p.mats.length : 0), 0);
+      st.innerHTML = `<div class="file-ok"><i class="ti ti-check"></i><span style="flex:1">${V.fname}</span>
+        <span style="font-weight:500">${parsed.length} моделей${matCnt ? ' · ' + matCnt + ' строк материалов' : ''}${groups ? ' · групп пропущено: ' + groups : ''}</span></div>`;
+    }
     renderVypusk();
   });
 }
@@ -3678,12 +3765,15 @@ function renderVypusk() {
     <div class="metric"><div class="metric-label">Отклонение</div><div class="metric-value ${totDev>0?'red':'green'}">${fmtM(totDev)}</div><div class="metric-sub">${totNorm?(totDev/totNorm*100).toFixed(1):0}%</div></div>
     <div class="metric"><div class="metric-label">Откл &gt; ${thr}% / нет норм.</div><div class="metric-value amber">${overCnt} / ${noNorm}</div></div>`;
 
-  document.getElementById('vp-body').innerHTML = rows.map(x => {
+  document.getElementById('vp-body').innerHTML = rows.map((x, ri) => {
     const bg = !x.hasNorm ? 'background:var(--amber-bg)'
              : (Math.abs(x.devPct) >= (thr||5) ? (x.devUnit > 0 ? 'background:var(--red-bg)' : 'background:var(--green-bg)') : '');
     const col = x.devUnit > 0 ? 'var(--red)' : (x.devUnit < 0 ? 'var(--green)' : 'var(--text2)');
-    return `<tr style="${bg}">
-      <td>${x.nom}${!x.hasNorm ? ' <span class="badge badge-amber" style="font-size:9px">нет норматива</span>' : ''}</td>
+    const hasMats = x.mats && x.mats.length;
+    const key = 'vp' + ri;
+    const open = _vpOpen.has(key);
+    let html = `<tr style="${bg}">
+      <td>${hasMats ? `<button class="expand-btn${open?' open':''}" style="margin-right:6px" onclick="toggleVpDetail('${key}')">${open?'▼':'▶'}</button>` : ''}${x.nom}${!x.hasNorm ? ' <span class="badge badge-amber" style="font-size:9px">нет норматива</span>' : ''}</td>
       <td style="color:var(--text2);font-size:12px">${x.char || '—'}</td>
       <td class="r">${fmt(x.qty)}</td>
       <td class="r">${x.hasNorm ? fmt(x.normUnit) : '—'}</td>
@@ -3694,9 +3784,199 @@ function renderVypusk() {
       <td class="r">${fmt(x.factTotal)}</td>
       <td class="r" style="color:${col};font-weight:500">${x.hasNorm ? fmt(x.devTotal) : '—'}</td>
     </tr>`;
+
+    // Раскрытие: фактический состав из отчёта 1С рядом с нормативом
+    if (hasMats && open) {
+      // Норматив берём НА ТОМ ЖЕ УРОВНЕ, что и 1С: прямые компоненты спецификации
+      // (полуфабрикаты остаются позициями, а не раскладываются до сырья)
+      const normDirect = {}, normLeaves = {};
+      const sk = findSpec(x.nom, x.char);
+      if (sk && S.specs[sk]) {
+        const r = calcCost(x.nom, x.char, new Set(), 0);
+        (r.tree||[]).forEach(n => {
+          const k = norm(n.name);
+          if (!normDirect[k]) normDirect[k] = { qty: 0, cost: 0, name: n.name };
+          normDirect[k].qty += n.qty; normDirect[k].cost += n.cost;
+        });
+        // Вложенные уровни: 1С в выпуске показывает полуфабрикат И его содержимое
+        // рядом, поэтому сопоставляем на любой глубине с учётом кратности.
+        (function walk(nodes, mult, parent){ (nodes||[]).forEach(n => {
+          const k = norm(n.name);
+          if (parent) {
+            if (!normLeaves[k]) normLeaves[k] = { qty: 0, cost: 0, name: n.name, parent };
+            normLeaves[k].qty += n.qty * mult; normLeaves[k].cost += n.cost * mult;
+          }
+          if (n.children && n.children.length) walk(n.children, mult * (n.qty || 1), n.name);
+        }); })(r.tree, 1, '');
+      }
+
+      // Нормализация: делим факт на количество выпуска
+      const per = (document.getElementById('vp-mode')?.value || 'unit') === 'unit';
+      const div = per ? (x.qty || 1) : 1;
+      const mul = per ? 1 : (x.qty || 1);   // множитель для норматива
+      const q3  = v => (Math.abs(v) >= 100 ? Math.round(v) : +v.toFixed(3));
+
+      const seen = new Set();
+      const matRows = x.mats.slice().sort((a,b) => b.sum - a.sum).map(m => {
+        const k = norm(m.name); seen.add(k);
+        const nm = normDirect[k] || normLeaves[k];
+        const lvl = normDirect[k] ? '' : (normLeaves[k] ? ` <span class="badge badge-blue" style="font-size:9px">в составе: ${normLeaves[k].parent}</span>` : '');
+        const fQty = m.qty / div, fSum = m.sum / div;
+        const nQty = nm ? nm.qty * mul : null;
+        const nSum = nm ? nm.cost * mul : null;
+        const d  = nSum != null ? fSum - nSum : null;
+        const dp = (nSum != null && nSum > 0) ? (d / nSum * 100) : null;
+        const dc = d == null ? 'var(--text3)' : (d > 0 ? 'var(--red)' : 'var(--green)');
+        return `<tr style="${nm ? '' : 'background:var(--amber-bg)'}">
+          <td style="padding-left:26px;color:${nm?'#9aa3b8':'var(--amber)'};font-size:11px">${m.name}${nm ? lvl : ' <span class="badge badge-amber" style="font-size:9px">нет в спецификации → добавить</span>'}</td>
+          <td class="r" style="font-size:11px;color:var(--text2)">${q3(fQty)}</td>
+          <td class="r" style="font-size:11px;color:var(--text2)">${nQty != null ? q3(nQty) : '—'}</td>
+          <td class="r" style="font-size:11px">${fmt(fSum)}</td>
+          <td class="r" style="font-size:11px;color:var(--text2)">${nSum != null ? fmt(nSum) : '—'}</td>
+          <td class="r" style="font-size:11px;color:${dc};font-weight:500">${d != null ? fmt(d) : '—'}</td>
+          <td class="r" style="font-size:11px;color:${dc}">${dp != null ? dp.toFixed(0)+'%' : '—'}</td>
+        </tr>`;
+      }).join('');
+
+      const missing = Object.keys(normDirect).filter(k => !seen.has(k)).map(k => {
+        const nm = normDirect[k];
+        const nQty = nm.qty * mul, nSum = nm.cost * mul;
+        return `<tr style="background:var(--amber-bg)">
+          <td style="padding-left:26px;color:var(--amber);font-size:11px">${nm.name} <span class="badge badge-amber" style="font-size:9px">есть в нормативе, нет в факте</span></td>
+          <td class="r" style="font-size:11px">—</td>
+          <td class="r" style="font-size:11px">${q3(nQty)}</td>
+          <td class="r" style="font-size:11px">—</td>
+          <td class="r" style="font-size:11px">${fmt(nSum)}</td>
+          <td class="r" style="font-size:11px;color:var(--green)">${fmt(-nSum)}</td>
+          <td class="r" style="font-size:11px;color:var(--green)">-100%</td>
+        </tr>`;
+      }).join('');
+
+      const factSum = x.mats.reduce((s,m)=>s+m.sum,0) / div;
+      const normSum = Object.values(normDirect).reduce((s,n)=>s+n.cost,0) * mul;
+      const dTot = factSum - normSum;
+
+      html += `<tr><td colspan="10" style="padding:0;background:var(--bg3)">
+        <div style="padding:.45rem .75rem .45rem 26px;font-size:11px;color:var(--text2);border-bottom:1px solid var(--border)">
+          Показано <b style="color:var(--accent)">${per ? 'на 1 единицу' : 'на весь выпуск ('+fmt(x.qty)+' шт)'}</b>
+          · факт ${fmt(factSum)} ₽ · норматив ${fmt(normSum)} ₽ ·
+          <span style="color:${dTot>0?'var(--red)':'var(--green)'}">отклонение ${fmt(dTot)} ₽</span>
+          <div style="font-size:10px;color:var(--text3);margin-top:2px">Итог норматива — по прямому уровню спецификации. Строки «в составе» показаны для сверки и в итог не входят, иначе был бы двойной счёт.</div>
+        </div>
+        <table style="width:100%;border-collapse:collapse">
+          <thead><tr>
+            <th style="padding-left:26px;font-size:10px">Материал (факт из 1С)</th>
+            <th class="r" style="font-size:10px">Кол-во факт</th>
+            <th class="r" style="font-size:10px">Кол-во норматив</th>
+            <th class="r" style="font-size:10px">Сумма факт</th>
+            <th class="r" style="font-size:10px">Сумма норматив</th>
+            <th class="r" style="font-size:10px">Отклонение</th>
+            <th class="r" style="font-size:10px">Откл, %</th>
+          </tr></thead>
+          <tbody>${matRows}${missing}</tbody>
+        </table>
+      </td></tr>`;
+    }
+    return html;
   }).join('') || '<tr><td colspan="10" class="no-data" style="padding:1.5rem">Нет позиций по фильтру</td></tr>';
 
   V._all = all;
+  renderVypuskErrors(all);
+}
+
+// Свод расхождений состава по всем моделям — рабочий список для правки спецификаций
+function buildVypuskErrors(all) {
+  const err = {};   // key -> {name, type, models:Set, fact, normv}
+  (all||[]).forEach(x => {
+    if (!x.mats || !x.mats.length) return;
+    const nd = {}, nn = {};
+    const sk = findSpec(x.nom, x.char);
+    if (sk && S.specs[sk]) {
+      const r = calcCost(x.nom, x.char, new Set(), 0);
+      (r.tree||[]).forEach(n => {
+        const k = norm(n.name);
+        if (!nd[k]) nd[k] = { qty:0, cost:0, name:n.name };
+        nd[k].qty += n.qty; nd[k].cost += n.cost;
+      });
+      (function walk(nodes, mult, parent){ (nodes||[]).forEach(n => {
+        const k = norm(n.name);
+        if (parent) { if (!nn[k]) nn[k] = { name:n.name, parent }; }
+        if (n.children && n.children.length) walk(n.children, mult * (n.qty || 1), n.name);
+      }); })(r.tree, 1, '');
+    }
+    const seen = new Set();
+    x.mats.forEach(m => {
+      const k = norm(m.name); seen.add(k);
+      if (nd[k] || nn[k]) return;            // совпало на каком-то уровне — не ошибка
+      const id = 'F|' + k;
+      if (!err[id]) err[id] = { name: m.name, type: 'nonorm', models: new Set(), fact: 0, normv: 0 };
+      err[id].models.add(x.nom);
+      err[id].fact += m.sum || 0;
+    });
+    Object.keys(nd).filter(k => !seen.has(k)).forEach(k => {
+      const id = 'N|' + k;
+      if (!err[id]) err[id] = { name: nd[k].name, type: 'nofact', models: new Set(), fact: 0, normv: 0 };
+      err[id].models.add(x.nom);
+      err[id].normv += (nd[k].cost || 0) * (x.qty || 1);
+    });
+  });
+  return Object.values(err).map(e => ({ ...e, impact: e.type === 'nonorm' ? e.fact : -e.normv }))
+                           .sort((a,b) => Math.abs(b.impact) - Math.abs(a.impact));
+}
+
+function renderVypuskErrors(all) {
+  const list = buildVypuskErrors(all);
+  V._errors = list;
+  const t = document.getElementById('vp-err-type')?.value || 'all';
+  const rows = list.filter(e => t === 'all' || e.type === t);
+
+  const nonorm = list.filter(e => e.type === 'nonorm');
+  const nofact = list.filter(e => e.type === 'nofact');
+  const sumNo  = nonorm.reduce((s,e)=>s+e.fact,0);
+  const cnt = document.getElementById('vp-err-count');
+  if (cnt) cnt.innerHTML = `нет в спецификации: <b style="color:var(--amber)">${nonorm.length}</b> на ${fmt(sumNo)} ₽ · не списано: <b style="color:var(--accent)">${nofact.length}</b>`;
+
+  const body = document.getElementById('vp-err-body');
+  if (!body) return;
+  body.innerHTML = rows.map(e => {
+    const isNo = e.type === 'nonorm';
+    const models = [...e.models];
+    return `<tr style="background:${isNo ? 'var(--amber-bg)' : 'rgba(0,227,138,.06)'}">
+      <td style="font-weight:500">${e.name}</td>
+      <td style="font-size:11px;color:${isNo?'var(--amber)':'var(--accent)'}">${isNo ? 'списано, нет в спецификации' : 'есть в спецификации, не списано'}</td>
+      <td class="r">${models.length}</td>
+      <td class="r">${e.fact ? fmt(e.fact) : '—'}</td>
+      <td class="r">${e.normv ? fmt(e.normv) : '—'}</td>
+      <td class="r" style="font-weight:500;color:${e.impact>0?'var(--red)':'var(--green)'}">${fmt(e.impact)}</td>
+      <td style="font-size:11px;color:var(--text3)">${models.slice(0,4).join(', ')}${models.length>4?' …+'+(models.length-4):''}</td>
+    </tr>`;
+  }).join('') || '<tr><td colspan="7" class="no-data" style="padding:1.5rem">Расхождений не найдено</td></tr>';
+}
+
+function exportVypuskErrors() {
+  if (!V._errors || !V._errors.length) { alert('Сначала выполните сверку'); return; }
+  const wb = XLSX.utils.book_new();
+  const hdr = ['Материал','Тип расхождения','Моделей','Сумма факт, ₽','Сумма норматив, ₽','Влияние, ₽','В каких моделях'];
+  const data = V._errors.map(e => [
+    e.name,
+    e.type === 'nonorm' ? 'списано, нет в спецификации' : 'есть в спецификации, не списано',
+    e.models.size,
+    e.fact ? +e.fact.toFixed(2) : '',
+    e.normv ? +e.normv.toFixed(2) : '',
+    +e.impact.toFixed(2),
+    [...e.models].join('; ')
+  ]);
+  const ws = XLSX.utils.aoa_to_sheet([hdr, ...data]);
+  ws['!cols'] = [{wch:44},{wch:34},{wch:10},{wch:16},{wch:18},{wch:16},{wch:70}];
+  XLSX.utils.book_append_sheet(wb, ws, 'Ошибки спецификаций');
+  const date = new Date().toLocaleDateString('ru-RU').replace(/\./g,'-');
+  XLSX.writeFile(wb, `oshibki_specifikaciy_${date}.xlsx`);
+}
+
+const _vpOpen = new Set();
+function toggleVpDetail(k) {
+  if (_vpOpen.has(k)) _vpOpen.delete(k); else _vpOpen.add(k);
+  renderVypusk();
 }
 
 function exportVypusk() {
@@ -3736,6 +4016,53 @@ function exportVypusk() {
   const ws = XLSX.utils.aoa_to_sheet([hdr, ...data]);
   ws['!cols'] = [{wch:42},{wch:24},{wch:9},{wch:16},{wch:14},{wch:14},{wch:10},{wch:18},{wch:16},{wch:20},{wch:16}];
   XLSX.utils.book_append_sheet(wb, ws, 'Сверка выпуска');
+
+  // ── Лист «Материалы на единицу» — факт из 1С против норматива ──
+  const mh = ['Модель','Выпуск, шт','Материал','Кол-во факт/ед','Кол-во норм/ед','Сумма факт/ед, ₽','Сумма норм/ед, ₽','Отклонение/ед, ₽','Откл, %','Уровень'];
+  const md = [];
+  V._all.forEach(x => {
+    if (!x.mats || !x.mats.length) return;
+    const nd = {}, nl = {};
+    const sk = findSpec(x.nom, x.char);
+    if (sk && S.specs[sk]) {
+      const r = calcCost(x.nom, x.char, new Set(), 0);
+      (r.tree||[]).forEach(n => {
+        const k = norm(n.name);
+        if (!nd[k]) nd[k] = { qty:0, cost:0, name:n.name };
+        nd[k].qty += n.qty; nd[k].cost += n.cost;
+      });
+      (function walk(nodes){ (nodes||[]).forEach(n => {
+        if (!n.children || !n.children.length) {
+          const k = norm(n.name);
+          if (!nl[k]) nl[k] = { qty:0, cost:0, name:n.name };
+          nl[k].qty += n.qty; nl[k].cost += n.cost;
+        } else walk(n.children);
+      }); })(r.tree);
+    }
+    const q = x.qty || 1;
+    const seen = new Set();
+    x.mats.slice().sort((a,b)=>b.sum-a.sum).forEach(m => {
+      const k = norm(m.name); seen.add(k);
+      const nm = nd[k] || nl[k];
+      const lvl = nd[k] ? 'прямой' : (nl[k] ? 'в составе п/ф' : 'нет в нормативе');
+      const fq = m.qty/q, fs = m.sum/q;
+      const nq = nm ? nm.qty : null, ns = nm ? nm.cost : null;
+      const d  = ns != null ? fs - ns : null;
+      md.push([x.nom, x.qty, m.name, +fq.toFixed(4), nq!=null?+nq.toFixed(4):'', +fs.toFixed(2),
+               ns!=null?+ns.toFixed(2):'', d!=null?+d.toFixed(2):'',
+               (ns!=null&&ns>0)?+(d/ns*100).toFixed(1):'', lvl]);
+    });
+    Object.keys(nd).filter(k => !seen.has(k)).forEach(k => {
+      const nm = nd[k];
+      md.push([x.nom, x.qty, nm.name, '', +nm.qty.toFixed(4), '', +nm.cost.toFixed(2),
+               +(-nm.cost).toFixed(2), -100, 'нет в факте']);
+    });
+  });
+  if (md.length) {
+    const wsM = XLSX.utils.aoa_to_sheet([mh, ...md]);
+    wsM['!cols'] = [{wch:42},{wch:11},{wch:40},{wch:15},{wch:15},{wch:17},{wch:17},{wch:18},{wch:10},{wch:16}];
+    XLSX.utils.book_append_sheet(wb, wsM, 'Материалы на единицу');
+  }
 
   const date = new Date().toLocaleDateString('ru-RU').replace(/\./g,'-');
   XLSX.writeFile(wb, `sverka_vypuska_${date}.xlsx`);
@@ -3931,7 +4258,7 @@ function exportCSV() {
   XLSX.writeFile(wb, `sebestoimost_${date}.xlsx`);
 }
 
-console.log('%c\u2713 IRIX COST v4.2 \u2014 \u0444\u0430\u0439\u043b \u0437\u0430\u0433\u0440\u0443\u0436\u0435\u043d \u043f\u043e\u043b\u043d\u043e\u0441\u0442\u044c\u044e', 'color:#00E38A;font-weight:bold;font-size:14px');
+console.log('%c\u2713 IRIX COST v4.8 \u2014 \u0444\u0430\u0439\u043b \u0437\u0430\u0433\u0440\u0443\u0436\u0435\u043d \u043f\u043e\u043b\u043d\u043e\u0441\u0442\u044c\u044e', 'color:#00E38A;font-weight:bold;font-size:14px');
 window.__CALC_OK__ = true;
 </script>
 </body>
