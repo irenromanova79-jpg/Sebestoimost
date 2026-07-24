@@ -1360,12 +1360,13 @@ function loadSpecs(inp) {
     let current = null;
 
     // Определяем раскладку: новая выгрузка содержит «Спецификация.Состав.Номенклатура»
-    let newLayout = false, iCompName = 6, iCompChar = 5, iQty = 3, iUnit = 0;
-    for (let i = 0; i < Math.min(rows.length, 10); i++) {
+    let newLayout = false, iCompName = 6, iCompChar = 5, iQty = 3, iUnit = 0, hdrIdx = -1;
+    for (let i = 0; i < Math.min(rows.length, 20); i++) {
       const rr = (rows[i] || []).map(x => norm(x));
       const j = rr.findIndex(s => s.includes('состав.номенклатура'));
       if (j >= 0) {
         newLayout = true;
+        hdrIdx = i;
         iCompName = j;
         const jc = rr.findIndex(s => s.includes('состав.характер'));
         const jq = rr.findIndex(s => s.includes('состав.количество'));
@@ -1379,7 +1380,11 @@ function loadSpecs(inp) {
     S.specsLayout = newLayout ? 'new' : 'old';
     let compWithChar = 0;
 
-    for (let i = 7; i < rows.length; i++) {
+    // Данные начинаются сразу после шапки. Раньше здесь было зашито i = 7 —
+    // сдвиг шапки на строку ломал разбор молча.
+    const startRow = hdrIdx >= 0 ? hdrIdx + 1 : 7;
+    let compTotal = 0;
+    for (let i = startRow; i < rows.length; i++) {
       const r = rows[i];
       if (!r) continue;
 
@@ -1398,6 +1403,7 @@ function loadSpecs(inp) {
               unit: String(r[iUnit] || '').trim().replace(/^nan$/i, ''),
               qty: q
             });
+            compTotal++;
           }
           continue;
         }
@@ -1415,7 +1421,7 @@ function loadSpecs(inp) {
         if (!c0 || c0 === 'nan') continue;
         const num = parseFloat(c5.replace(',', '.'));
         if (!isNaN(num) && c5 !== '') {
-          if (current) S.specs[current].components.push({ name: c0, char: '', unit: c3 !== 'nan' ? c3 : '', qty: num });
+          if (current) { S.specs[current].components.push({ name: c0, char: '', unit: c3 !== 'nan' ? c3 : '', qty: num }); compTotal++; }
         } else {
           const char = (c3 !== 'nan' && c3) ? c3 : '';
           const key = norm(c0) + '|' + norm(char);
@@ -1438,14 +1444,19 @@ function loadSpecs(inp) {
     if (health) showSpecsWarning(health); else hideSpecsWarning();
     const okCnt = Object.values(S.specs).filter(s => s.components && s.components.length).length;
     setUploaded('uz-specs', 'us-specs', inp.files[0].name,
-      okCnt + ' спецификаций' + (compWithChar ? ' · ' + compWithChar + ' с характеристикой' : ''));
+      okCnt + ' спецификаций · ' + compTotal + ' компонентов'
+      + (compWithChar ? ' · ' + compWithChar + ' с характеристикой' : ''));
     document.getElementById('uz-stock').style.display = 'block';
     applyUserSpecs();
     specsSave(inp.files[0].name);
     fillProdDatalist();
     checkReady();
     console.log('Спецификации разобраны за', Math.round(performance.now() - t0), 'мс;',
-                rows.length, 'строк →', Object.keys(S.specs).length, 'спецификаций');
+                'раскладка:', S.specsLayout, '| шапка в строке', hdrIdx + 1, '| данные с', startRow + 1,
+                '|', rows.length, 'строк →', Object.keys(S.specs).length, 'спецификаций,', compTotal, 'компонентов');
+    // Если расчёт уже был выполнен на прежних (например, кэшированных) спецификациях —
+    // пересчитываем, иначе в таблице остаются старые нули.
+    if (S.calcRows && S.calcRows.length) runCalc(true);
     } catch (err) {
       console.error('loadSpecs:', err);
       specsFail('ошибка разбора: ' + (err && err.message ? err.message : String(err)));
