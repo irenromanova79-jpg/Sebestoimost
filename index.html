@@ -1362,7 +1362,9 @@ function loadSpecs(inp) {
     // Определяем раскладку: новая выгрузка содержит «Спецификация.Состав.Номенклатура»
     let newLayout = false, iCompName = 6, iCompChar = 5, iQty = 3, iUnit = 0, hdrIdx = -1;
     for (let i = 0; i < Math.min(rows.length, 20); i++) {
-      const rr = (rows[i] || []).map(x => norm(x));
+      // Array.from, а не .map: SheetJS отдаёт строки с «дырами» на месте пустых ячеек,
+      // .map дыры сохраняет, а .findIndex по ним проходит и получает undefined → падение.
+      const rr = Array.from(rows[i] || [], x => norm(x));
       const j = rr.findIndex(s => s.includes('состав.номенклатура'));
       if (j >= 0) {
         newLayout = true;
@@ -3802,7 +3804,7 @@ function loadVypusk(inp) {
       if (j.includes('количество продукции') || j.includes('номенклат') || j.includes('подразделен') || j.includes('модель') || j.includes('наименован')) { hdr = i; break; }
     }
     if (hdr < 0) hdr = 0;
-    const H = (rows[hdr]||[]).map(x => norm(x));
+    const H = Array.from(rows[hdr]||[], x => norm(x)); // Array.from заполняет дыры пустой строкой
 
     // ── Формат 1С «Себестоимость выпуска» ────────────────────────────────
     // Подразделение | Количество продукции | Количество | Сумма | Себестоимость ед.
