@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>IRIX COST — себестоимость и калькуляция</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' fill='%230D1B16'/%3E%3Cpolygon points='12,12 12,88 50,50' fill='%2300E38A'/%3E%3Cpolygon points='50,50 88,12 42,12' fill='%2300E38A'/%3E%3Cpolygon points='12,88 50,50 88,88' fill='%2300B874'/%3E%3C/svg%3E">
-<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" hrфef="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Geologica:wght@300;400;500;600&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
@@ -194,7 +194,7 @@ select:focus{outline:none;border-color:var(--accent)}
   <!-- Topbar -->
   <header class="topbar">
     <div class="logo"><svg class="logo-mark" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" aria-label="IRIX"><polygon points="4,4 4,96 50,50" fill="#00E38A"/><polygon points="50,50 96,4 40,4" fill="#00E38A"/><polygon points="4,96 50,50 96,96" fill="#00B874"/></svg><div class="logo-text"><div class="logo-name">IRIX <b>COST</b></div><div class="logo-sub">SMART APPS BY IRINA ROMANOVA</div></div></div>
-    <div style="margin-left:.75rem;line-height:1.35"><div style="font-size:12px;color:var(--text2);font-family:var(--mono)">Себестоимость и калькуляция <span style="color:var(--accent)">v5.1</span></div><div style="font-size:10px;color:var(--text3)">умные приложения для бизнеса</div></div>
+    <div style="margin-left:.75rem;line-height:1.35"><div style="font-size:12px;color:var(--text2);font-family:var(--mono)">Себестоимость и калькуляция <span style="color:var(--accent)">v5.4</span> <span style="color:var(--text3);font-size:10px">fix-2026-07-24</span></div><div style="font-size:10px;color:var(--text3)">умные приложения для бизнеса</div></div>
     <div class="topbar-right">
       <span id="top-status" style="font-size:11px;color:var(--text3);font-family:var(--mono)"></span>
       <button class="btn btn-sm" onclick="runCalc()" id="btn-recalc" style="display:none">↺ Обновить расчёт</button>
@@ -688,6 +688,7 @@ select:focus{outline:none;border-color:var(--accent)}
             <thead><tr>
               <th>Канал</th>
               <th>Номенклатура</th>
+              <th>Характеристика</th>
               <th class="r">Кол-во</th>
               <th class="r">Выручка, ₽</th>
               <th class="r">Себест/ед, ₽</th>
@@ -1567,6 +1568,18 @@ function findSpec(nom, char) {
   return findSpecEx(nom, char).key;
 }
 
+// Имеет ли смысл распространять характеристику родителя на компонент?
+// Да — только если по паре «номенклатура + характеристика» есть цена или спецификация.
+function charApplies(nom, char) {
+  const c = norm(char || '');
+  if (!c) return false;
+  const k = norm(nom) + '|' + c;
+  if (S.pricesByChar && S.pricesByChar[k] > 0) return true;
+  if (S.pricebook[k] && S.pricebook[k].price > 0) return true;
+  if (S.specs[k]) return true;
+  return false;
+}
+
 function calcCost(nom, char, visited, depth) {
   if (depth > 8) return { cost: 0, full: false, missing: [nom + '(глубина)'], tree: [] };
   const fs = findSpecEx(nom, char);
@@ -1591,7 +1604,12 @@ function calcCost(nom, char, visited, depth) {
   let total = 0, full = true, missing = [], tree = [];
   for (const comp of sp.components) {
     // Характеристика компонента; если пусто — наследуем от родителя
-    const cch = comp.char || char || '';
+    // Характеристика компонента. Наследовать родительскую вслепую нельзя:
+    // у поролона, синтепона, лака характеристики нет в принципе, и «Велюр беж 05»
+    // на них — мусор в отчёте. Но у ТКАНИ в спецификации характеристика бывает пустой,
+    // а цена от неё зависит впятеро. Поэтому наследуем только тогда, когда родительская
+    // характеристика даёт точное попадание в цену или в спецификацию.
+    const cch = comp.char || (charApplies(comp.name, char) ? char : '');
     const sub = calcCost(comp.name, cch, nv, depth + 1);
     const lineC = sub.cost * comp.qty;
     total += lineC;
@@ -1601,7 +1619,8 @@ function calcCost(nom, char, visited, depth) {
     // leaf=true только для настоящего сырья без спецификации.
     const isSemifab = sub.tree.length > 0 && !(sub.tree.length === 1 && sub.tree[0].leaf && norm(sub.tree[0].name) === norm(comp.name));
     const sfs = isSemifab ? findSpecEx(comp.name, cch) : null;
-    tree.push({ name: comp.name, char: cch, unit: comp.unit, qty: comp.qty, cost: lineC, depth,
+    tree.push({ name: comp.name, char: cch, charInherited: !comp.char && !!cch,
+                unit: comp.unit, qty: comp.qty, cost: lineC, depth,
                 leaf: !isSemifab, hasPrice: sub.full, src: sub.tree[0]?.src,
                 charMatch: sub.tree[0]?.charMatch || null,
                 specHow: sfs ? sfs.how : null, specVariants: sfs ? (sfs.variants || 0) : 0,
@@ -2014,7 +2033,7 @@ function renderTreeRows(nodes, total, depth, parentPath) {
     let html = `<tr class="tree-row" data-path="${path}" data-depth="${depth}" style="${hidden}${isSemi ? 'background:rgba(0,227,138,.05)' : ''}">
       <td style="padding-left:${8 + ind}px;color:${nameColor};font-weight:${nameWeight};white-space:nowrap">
         ${toggle}${n.name}
-        ${n.char ? `<span style="color:var(--accent);font-size:10px;margin-left:5px">[${n.char}]</span>` : ''}
+        ${n.char ? `<span style="color:${n.charInherited ? 'var(--text3)' : 'var(--accent)'};font-size:10px;margin-left:5px" title="${n.charInherited ? 'характеристика унаследована от родителя — в спецификации у компонента её нет' : 'характеристика из спецификации'}">[${n.char}]${n.charInherited ? ' ↑' : ''}</span>` : ''}
         ${n.specHow === 'first' ? `<span class="badge badge-amber" style="margin-left:4px;font-size:9px" title="Характеристика не совпала ни с одним вариантом — взят первый. Проверьте характеристику в спецификации.">⚠ вариант наугад (из ${n.specVariants})</span>` : ''}
         ${n.charMatch === 'avg' ? `<span class="badge badge-amber" style="margin-left:4px;font-size:9px" title="Цена усреднена по ${n.variants} характеристикам — точной не нашлось">⚠ цена средняя</span>` : ''}
         ${n.charMatch === 'exact' ? `<span class="badge badge-green" style="margin-left:4px;font-size:9px" title="Цена найдена точно по характеристике">✓</span>` : ''}
@@ -3280,12 +3299,12 @@ function buildNormCost() {
 // Найти нормативную себестоимость номенклатуры (по имени, характеристика опц.)
 function lookupNormCost(normMap, nom, char) {
   const n = norm(nom), c = norm(char || '');
-  if (normMap[n + '|' + c]) return normMap[n + '|' + c];
-  if (normMap[n + '|']) return normMap[n + '|'];
-  for (const k of Object.keys(normMap)) {
-    if (k.startsWith(n + '|')) return normMap[k];
-  }
-  return null;
+  if (normMap[n + '|' + c]) return { ...normMap[n + '|' + c], how: 'exact' };
+  if (normMap[n + '|']) return { ...normMap[n + '|'], how: c ? 'nochar' : 'exact' };
+  const cands = Object.keys(normMap).filter(k => k.startsWith(n + '|'));
+  if (!cands.length) return null;
+  // Характеристика не совпала ни с одним вариантом — это догадка, а не расчёт
+  return { ...normMap[cands[0]], how: cands.length > 1 ? 'variant' : 'only', variants: cands.length };
 }
 
 // ── Версии нормативной себестоимости ──────────────────────────────────────
@@ -3637,69 +3656,116 @@ function exportNormCost() {
 
 // ── Каналы продаж ─────────────────────────────────────────────────────────
 // C.rows: [{channel, nom, qty, rev}]
-const C = { rows: [], fname: '' };
+const C = { rows: [], fname: '', info: '' };
+
+// Старый способ: колонки жёстко A/B/C, канал угадывается по тому, что его выручка
+// равна сумме следующих строк. Оставлен запасным путём — если шапку опознать не удалось.
+function parseChannelsHeuristic(rows, hdr, num) {
+  const raw = [];
+  for (let i = hdr + 1; i < rows.length; i++) {
+    const r = rows[i]; if (!r) continue;
+    const c0 = String(r[0]||'').trim();
+    const c1 = num(r[1]);
+    const c2 = num(r[2]);
+    if (!c0 && c1 === null && c2 === null) continue;
+    if (/^(итого|всего)/i.test(c0)) continue;
+    raw.push({ label: c0 || (r[1] != null ? String(r[1]).trim() : ''), c0, qty: c1, rev: c2 });
+  }
+  const isHeader = new Array(raw.length).fill(false);
+  for (let i = 0; i < raw.length; i++) {
+    if (raw[i].rev == null || raw[i].rev <= 0) continue;
+    let sum = 0, j = i + 1;
+    while (j < raw.length) {
+      if (raw[j].rev != null) sum += raw[j].rev;
+      if (Math.abs(sum - raw[i].rev) < 1) { isHeader[i] = true; break; }
+      if (sum > raw[i].rev + 1) break;
+      j++;
+    }
+  }
+  if (raw.length && !raw[0].c0) isHeader[0] = true;
+  const out = []; let cur = 'Без канала';
+  for (let i = 0; i < raw.length; i++) {
+    if (isHeader[i]) { cur = raw[i].label || ('Канал ' + (out.length+1)); continue; }
+    if (raw[i].qty == null && raw[i].rev == null) continue;
+    if (raw[i].c0) out.push({ channel: cur, nom: raw[i].c0, char: '', qty: raw[i].qty || 0, rev: raw[i].rev || 0 });
+  }
+  return out;
+}
 
 function loadChannels(inp) {
   if (!inp.files[0]) return;
+  const st = document.getElementById('ch-file-status');
+  const fail = msg => { st.innerHTML = `<div style="color:var(--red);font-size:12px">\u26a0 ${msg}</div>`; };
+  st.innerHTML = '<div style="color:var(--text2);font-size:12px">Читаем...</div>';
   readXlsx(inp.files[0], rows => {
-    let hdr = -1;
-    for (let i = 0; i < Math.min(rows.length, 6); i++) {
-      const joined = (rows[i]||[]).map(c => String(c||'')).join(' ').toLowerCase();
-      if (joined.includes('проект') || joined.includes('номенклатур')) { hdr = i; break; }
+   try {
+    const num = v => { const n = parseFloat(String(v == null ? '' : v).replace(/\s/g,'').replace(',','.')); return isNaN(n) ? null : n; };
+
+    // ── Ищем шапку и колонки по названиям, а не по номерам ──────────────────
+    let hdr = -1, H = [];
+    for (let i = 0; i < Math.min(rows.length, 12); i++) {
+      const rr = Array.from(rows[i] || [], x => norm(x));
+      const j = rr.join(' ');
+      if (j.includes('номенклат') || j.includes('наименован') || j.includes('модель') || j.includes('товар')) { hdr = i; H = rr; break; }
     }
-    if (hdr < 0) hdr = 0;
+    const ci = { ch: -1, nom: -1, char: -1, qty: -1, rev: -1 };
+    H.forEach((s2, i) => {
+      if (!s2) return;
+      if (ci.nom  < 0 && (s2.includes('номенклат') || s2.includes('наименован') || s2.includes('модель') || s2.includes('товар'))) { ci.nom = i; return; }
+      if (ci.char < 0 && s2.includes('характер')) { ci.char = i; return; }
+      if (ci.ch   < 0 && (s2.includes('канал') || s2.includes('проект') || s2.includes('контрагент') || s2.includes('клиент') || s2.includes('магазин') || s2.includes('точка') || s2.includes('подразделен'))) { ci.ch = i; return; }
+      if (ci.qty  < 0 && (s2.includes('количест') || s2.includes('кол-во'))) { ci.qty = i; return; }
+      if (ci.rev  < 0 && (s2.includes('выручк') || s2.includes('сумма') || s2.includes('стоимост') || s2.includes('продаж'))) { ci.rev = i; return; }
+    });
 
-    const num = v => { const n = parseFloat(String(v||'').replace(',','.').replace(/\s/g,'')); return isNaN(n) ? null : n; };
-
-    // Собираем все содержательные строки
-    const raw = [];
-    for (let i = hdr + 1; i < rows.length; i++) {
-      const r = rows[i]; if (!r) continue;
-      const c0 = String(r[0]||'').trim();
-      const c1 = num(r[1]);
-      const c2 = num(r[2]);
-      if (!c0 && c1 === null && c2 === null) continue;
-      if (c0.toLowerCase().startsWith('итого') || c0.toLowerCase().startsWith('всего')) continue;
-      // Название канала: если c0 пустой — берём код из c1; иначе c0
-      const label = c0 || (r[1] != null ? String(r[1]).trim() : '');
-      raw.push({ label, c0, qty: c1, rev: c2 });
-    }
-
-    // Определяем заголовки каналов: строка, чья выручка ≈ сумме выручек
-    // последующих строк (до следующего такого заголовка).
-    const isHeader = new Array(raw.length).fill(false);
-    for (let i = 0; i < raw.length; i++) {
-      if (raw[i].rev == null || raw[i].rev <= 0) continue;
-      let sum = 0, j = i + 1;
-      while (j < raw.length) {
-        // накапливаем пока сумма не превысила выручку строки-кандидата
-        if (raw[j].rev != null) sum += raw[j].rev;
-        if (Math.abs(sum - raw[i].rev) < 1) { isHeader[i] = true; break; }
-        if (sum > raw[i].rev + 1) break;
-        j++;
+    let parsed = [], mode = '';
+    if (ci.nom >= 0 && (ci.qty >= 0 || ci.rev >= 0)) {
+      mode = 'по заголовкам';
+      let curCh = '';
+      for (let i = hdr + 1; i < rows.length; i++) {
+        const r = rows[i]; if (!r) continue;
+        const nom  = String(r[ci.nom] || '').trim().replace(/^nan$/i, '');
+        const qty  = ci.qty >= 0 ? num(r[ci.qty]) : null;
+        const rev  = ci.rev >= 0 ? num(r[ci.rev]) : null;
+        const chIn = ci.ch >= 0 ? String(r[ci.ch] || '').trim().replace(/^nan$/i, '') : '';
+        if (chIn) curCh = chIn;                       // 1С печатает канал один раз на группу
+        if (/^(итого|всего)/i.test(nom)) continue;
+        if (!nom) continue;
+        // Строка-группа: название есть, чисел нет. Это заголовок канала, а не позиция.
+        if (qty == null && rev == null) { if (ci.ch < 0) curCh = nom; continue; }
+        parsed.push({
+          channel: curCh || 'Без канала',
+          nom,
+          char: ci.char >= 0 ? String(r[ci.char] || '').trim().replace(/^nan$/i, '') : '',
+          qty: qty || 0,
+          rev: rev || 0
+        });
       }
     }
-    // Первая строка почти всегда заголовок (проект без c0)
-    if (raw.length && !raw[0].c0) isHeader[0] = true;
-
-    const parsed = [];
-    let currentChannel = 'Без канала';
-    for (let i = 0; i < raw.length; i++) {
-      if (isHeader[i]) { currentChannel = raw[i].label || ('Канал ' + (parsed.length+1)); continue; }
-      // Пропускаем строки без количества и без выручки (подзаголовки типа «Номенклатура»)
-      if (raw[i].qty == null && raw[i].rev == null) continue;
-      if (raw[i].c0) {
-        parsed.push({ channel: currentChannel, nom: raw[i].c0, qty: raw[i].qty || 0, rev: raw[i].rev || 0 });
-      }
+    if (!parsed.length) {
+      mode = 'эвристика (шапку опознать не удалось)';
+      parsed = parseChannelsHeuristic(rows, hdr < 0 ? 0 : hdr, num);
     }
 
     C.rows = parsed;
     C.fname = inp.files[0].name;
     const chCount = new Set(parsed.map(p => p.channel)).size;
-    document.getElementById('ch-file-status').innerHTML =
-      `<div class="file-ok"><i class="ti ti-check"></i><span style="flex:1">${C.fname}</span><span style="font-weight:500">${parsed.length} позиций · ${chCount} канала</span></div>`;
+    const withChar = parsed.filter(p => p.char).length;
+    C.info = mode + (ci.char >= 0 ? ', характеристика есть' : ', характеристики нет');
+    console.log('Каналы:', mode, '| шапка в строке', hdr + 1, '| колонки', JSON.stringify(ci),
+                '\u2192', parsed.length, 'позиций,', chCount, 'каналов,', withChar, 'с характеристикой');
+    if (!parsed.length) { fail('не удалось разобрать ни одной строки — проверьте, что в файле есть колонки с номенклатурой и количеством/выручкой'); return; }
+    st.innerHTML =
+      `<div class="file-ok"><i class="ti ti-check"></i><span style="flex:1">${C.fname}</span>` +
+      `<span style="font-weight:500">${parsed.length} позиций \u00b7 ${chCount} каналов</span></div>` +
+      `<div style="font-size:11px;color:var(--text3);margin-top:.25rem">разбор ${C.info}` +
+      (withChar ? ` \u00b7 ${withChar} строк с характеристикой` : '') + `</div>`;
     renderChannels();
-  });
+   } catch (err) {
+     console.error('loadChannels:', err);
+     fail('ошибка разбора: ' + (err && err.message ? err.message : String(err)));
+   }
+  }, fail);
 }
 
 function renderChannels() {
@@ -3717,13 +3783,15 @@ function renderChannels() {
 
   // Считаем по позициям
   const detail = C.rows.map(r => {
-    const nc = lookupNormCost(normMap, r.nom, '');
+    // Характеристика важна: у одной модели велюр и кожзам дают разную себестоимость
+    const nc = lookupNormCost(normMap, r.nom, r.char || '');
     const costPer = nc ? nc.cost : 0;
     const costTotal = costPer * r.qty;
     const margin = r.rev - costTotal;
     const mp = r.rev > 0 ? margin / r.rev * 100 : 0;
     const status = !nc ? 'нет норматива' : (nc.full ? 'полный' : 'неполный');
-    return { ...r, costPer, costTotal, margin, mp, status };
+    const approx = nc ? (nc.how === 'variant' || nc.how === 'nochar') : false;
+    return { ...r, costPer, costTotal, margin, mp, status, approx, how: nc ? nc.how : null };
   });
 
   // Группировка по каналам
@@ -3748,7 +3816,8 @@ function renderChannels() {
     <div class="metric"><div class="metric-label">Каналов</div><div class="metric-value">${channels.length}</div></div>
     <div class="metric"><div class="metric-label">Выручка</div><div class="metric-value">${fmtM(totRev)}</div></div>
     <div class="metric"><div class="metric-label">Себестоимость</div><div class="metric-value">${fmtM(totCost)}</div></div>
-    <div class="metric"><div class="metric-label">Маржа</div><div class="metric-value ${totMargin>=0?'green':'red'}">${fmtM(totMargin)}</div><div class="metric-sub">${totRev?(totMargin/totRev*100).toFixed(1):0}%</div></div>`;
+    <div class="metric"><div class="metric-label">Маржа</div><div class="metric-value ${totMargin>=0?'green':'red'}">${fmtM(totMargin)}</div><div class="metric-sub">${totRev?(totMargin/totRev*100).toFixed(1):0}%</div></div>
+    <div class="metric"><div class="metric-label">Без норматива</div><div class="metric-value ${detail.filter(d=>!d.costPer).length?'amber':''}">${detail.filter(d => !d.costPer).length}</div><div class="metric-sub">из ${detail.length} \u00b7 \u2248 ${detail.filter(d=>d.approx).length} приблизительно</div></div>`;
 
   // Сводка по каналам
   document.getElementById('ch-summary-body').innerHTML = channels.map(c => `
@@ -3774,6 +3843,7 @@ function renderChannels() {
     <tr style="${d.status==='нет норматива'?'background:var(--amber-bg)':''}">
       <td style="color:var(--text2);font-size:12px">${d.channel}</td>
       <td>${d.nom}</td>
+      <td style="font-size:11px;color:var(--text2)">${d.char || '—'}${d.approx ? ` <span class="badge badge-amber" style="font-size:9px" title="${d.how === 'variant' ? 'Характеристика не совпала ни с одним вариантом — взят первый' : 'Норматив взят по модели без учёта характеристики'}">\u2248</span>` : ''}</td>
       <td class="r">${fmt(d.qty)}</td>
       <td class="r">${fmt(d.rev)}</td>
       <td class="r" style="color:var(--text2)">${d.costPer?fmt(d.costPer):'—'}</td>
@@ -3781,7 +3851,7 @@ function renderChannels() {
       <td class="r" style="color:${d.margin>=0?'var(--green)':'var(--red)'}">${fmt(d.margin)}</td>
       <td class="r" style="color:${d.mp>=0?'var(--green)':'var(--red)'}">${d.mp.toFixed(1)}%</td>
       <td style="font-size:11px;color:${d.status==='полный'?'var(--green)':(d.status==='неполный'?'var(--amber)':'var(--red)')}">${d.status}</td>
-    </tr>`).join('') || '<tr><td colspan="9" class="no-data" style="padding:1.5rem">Нет данных</td></tr>';
+    </tr>`).join('') || '<tr><td colspan="10" class="no-data" style="padding:1.5rem">Нет данных</td></tr>';
 
   C._detail = detail;
   C._channels = channels;
@@ -4462,7 +4532,7 @@ function exportCSV() {
   XLSX.writeFile(wb, `sebestoimost_${date}.xlsx`);
 }
 
-console.log('%c\u2713 IRIX COST v5.1 \u2014 \u0444\u0430\u0439\u043b \u0437\u0430\u0433\u0440\u0443\u0436\u0435\u043d \u043f\u043e\u043b\u043d\u043e\u0441\u0442\u044c\u044e', 'color:#00E38A;font-weight:bold;font-size:14px');
+console.log('%c\u2713 IRIX COST v5.4 (fix-2026-07-24) \u2014 \u0444\u0430\u0439\u043b \u0437\u0430\u0433\u0440\u0443\u0436\u0435\u043d \u043f\u043e\u043b\u043d\u043e\u0441\u0442\u044c\u044e', 'color:#00E38A;font-weight:bold;font-size:14px');
 window.__CALC_OK__ = true;
 </script>
 </body>
