@@ -3859,8 +3859,9 @@ function renderChannels() {
     if (!byCh[d.channel]) byCh[d.channel] = { channel: d.channel, cnt:0, qty:0, rev:0, cost:0, noRev:0, noCnt:0 };
     const g = byCh[d.channel];
     g.cnt++; g.qty += d.qty; g.rev += d.rev; g.cost += d.costTotal;
-    // Позиции без норматива дают маржу 100 % — это не прибыль, а дырка в данных
-    if (d.status === 'нет норматива') { g.noRev += d.rev; g.noCnt++; }
+    // Позиции без себестоимости дают маржу 100 % — это не прибыль, а дырка в данных.
+    // Сюда же попадает «неполный» с нулём: спецификация есть, а цен в ней нет.
+    if (!d.costPer) { g.noRev += d.rev; g.noCnt++; }
   });
   const channels = Object.values(byCh).map(g => ({
     ...g, margin: g.rev - g.cost, mp: g.rev>0 ? (g.rev-g.cost)/g.rev*100 : 0,
@@ -3892,7 +3893,7 @@ function renderChannels() {
       <td class="r" style="color:${c.margin>=0?'var(--green)':'var(--red)'};font-weight:500">${fmt(c.margin)}</td>
       <td class="r" style="color:${c.mp>=0?'var(--green)':'var(--red)'}">${c.mp.toFixed(1)}%</td>
       <td class="r" style="color:var(--text2)">${totRev?(c.rev/totRev*100).toFixed(1):0}%</td>
-      <td class="r" style="color:${c.cover>99.9?'var(--text2)':'var(--amber)'}" title="${c.noCnt} позиций без нормативной себестоимости">${c.cover.toFixed(0)}%</td>
+      <td class="r" style="color:${c.cover>99.9?'var(--text2)':'var(--amber)'}" title="${c.noCnt} позиций без себестоимости — их выручка целиком уходит в маржу">${c.cover.toFixed(0)}%</td>
     </tr>`).join('') +
     `<tr style="background:var(--bg3);font-weight:600;border-top:2px solid var(--accent)">
       <td>ИТОГО</td><td class="r">${detail.length}</td><td class="r">${fmt(channels.reduce((s,c)=>s+c.qty,0))}</td>
@@ -4415,14 +4416,15 @@ function exportChannels() {
   const h1 = ['Канал/Проект','Позиций','Кол-во','Выручка, ₽','Себестоимость, ₽','Маржа, ₽','Маржа, %','Доля выручки, %','Покрытие нормативом, %'];
   const d1 = C._channels.map(c => [c.channel, c.cnt, c.qty, Math.round(c.rev), Math.round(c.cost), Math.round(c.margin), +c.mp.toFixed(1), +(totRev?c.rev/totRev*100:0).toFixed(1), +(c.cover||0).toFixed(1)]);
   const ws1 = XLSX.utils.aoa_to_sheet([h1, ...d1]);
-  ws1['!cols'] = [{wch:30},{wch:9},{wch:10},{wch:16},{wch:18},{wch:16},{wch:10},{wch:14}];
+  ws1['!cols'] = [{wch:30},{wch:9},{wch:10},{wch:16},{wch:18},{wch:16},{wch:10},{wch:14},{wch:22}];
   XLSX.utils.book_append_sheet(wb, ws1, 'Сводка по каналам');
 
   // Лист 2: детализация
-  const h2 = ['Канал','Номенклатура','Кол-во','Выручка, ₽','Себест/ед, ₽','Себест итого, ₽','Маржа, ₽','Маржа, %','Статус'];
-  const d2 = C._detail.map(d => [d.channel, d.nom, d.qty, Math.round(d.rev), +(d.costPer||0).toFixed(2), Math.round(d.costTotal), Math.round(d.margin), +d.mp.toFixed(1), d.status]);
+  const HOW = { exact:'точное', nochar:'без характеристики', variant:'первый из вариантов', only:'единственный вариант' };
+  const h2 = ['Канал','Номенклатура','Характеристика','Кол-во','Выручка, ₽','Себест/ед, ₽','Себест итого, ₽','Маржа, ₽','Маржа, %','Статус','Совпадение'];
+  const d2 = C._detail.map(d => [d.channel, d.nom, d.char || '', d.qty, Math.round(d.rev), +(d.costPer||0).toFixed(2), Math.round(d.costTotal), Math.round(d.margin), +d.mp.toFixed(1), d.status, d.how ? (HOW[d.how] || d.how) : '\u2014']);
   const ws2 = XLSX.utils.aoa_to_sheet([h2, ...d2]);
-  ws2['!cols'] = [{wch:20},{wch:40},{wch:9},{wch:14},{wch:14},{wch:16},{wch:14},{wch:10},{wch:14}];
+  ws2['!cols'] = [{wch:20},{wch:40},{wch:34},{wch:9},{wch:14},{wch:14},{wch:16},{wch:14},{wch:10},{wch:14},{wch:20}];
   XLSX.utils.book_append_sheet(wb, ws2, 'Детализация');
 
   const date = new Date().toLocaleDateString('ru-RU').replace(/\./g,'-');
