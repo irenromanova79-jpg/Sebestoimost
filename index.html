@@ -194,7 +194,7 @@ select:focus{outline:none;border-color:var(--accent)}
   <!-- Topbar -->
   <header class="topbar">
     <div class="logo"><svg class="logo-mark" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" aria-label="IRIX"><polygon points="4,4 4,96 50,50" fill="#00E38A"/><polygon points="50,50 96,4 40,4" fill="#00E38A"/><polygon points="4,96 50,50 96,96" fill="#00B874"/></svg><div class="logo-text"><div class="logo-name">IRIX <b>COST</b></div><div class="logo-sub">SMART APPS BY IRINA ROMANOVA</div></div></div>
-    <div style="margin-left:.75rem;line-height:1.35"><div style="font-size:12px;color:var(--text2);font-family:var(--mono)">Себестоимость и калькуляция <span style="color:var(--accent)">v5.5</span> <span style="color:var(--text3);font-size:10px">fix-2026-07-26</span></div><div style="font-size:10px;color:var(--text3)">умные приложения для бизнеса</div></div>
+    <div style="margin-left:.75rem;line-height:1.35"><div style="font-size:12px;color:var(--text2);font-family:var(--mono)">Себестоимость и калькуляция <span style="color:var(--accent)">v5.6</span> <span style="color:var(--text3);font-size:10px">fix-2026-07-27</span></div><div style="font-size:10px;color:var(--text3)">умные приложения для бизнеса</div></div>
     <div class="topbar-right">
       <span id="top-status" style="font-size:11px;color:var(--text3);font-family:var(--mono)"></span>
       <button class="btn btn-sm" onclick="runCalc()" id="btn-recalc" style="display:none">↺ Обновить расчёт</button>
@@ -236,6 +236,9 @@ select:focus{outline:none;border-color:var(--accent)}
     </div>
     <div class="nav-item" data-tab="vypusk">
       <span class="nav-icon">🔍</span> Сверка выпуска
+    </div>
+    <div class="nav-item" data-tab="mpcalc">
+      <span class="nav-icon">⚖</span> МП vs Опт
     </div>
     <div class="nav-sep"></div>
     <div class="nav-label">Экспорт</div>
@@ -800,6 +803,45 @@ select:focus{outline:none;border-color:var(--accent)}
               <tbody id="vp-err-body"></tbody>
             </table>
           </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- MP vs OPT — калькулятор экономики маркетплейса и опта -->
+    <div id="tab-mpcalc" class="section">
+      <div class="alert alert-blue"><span>ℹ</span><div>
+        Выручка, количество и себестоимость подтягиваются со вкладки «Каналы продаж» (там нужно нажать «Рассчитать по каналам»). Расходы площадки вводятся вручную — в рублях или в процентах от выручки этого канала.<br>
+        <b>Чистая выручка</b> = выручка − расходы площадки. &nbsp;<b>Маржа</b> = выручка − расходы площадки − себестоимость. Маржа показывается двумя способами: к общей выручке и к чистой.
+      </div></div>
+
+      <div class="card">
+        <div style="display:flex;align-items:center;gap:.75rem;flex-wrap:wrap">
+          <div class="card-title" style="margin:0">Исходные данные</div>
+          <span class="toolbar-spacer"></span>
+          <button class="btn btn-primary btn-sm" onclick="mpcPullAll()">↺ Подтянуть из «Каналов продаж»</button>
+          <button class="btn btn-sm" onclick="mpcExport()">↓ Скачать xlsx</button>
+          <button class="btn btn-sm" style="color:var(--red);border-color:var(--red)" onclick="mpcReset()">✕ Сбросить</button>
+        </div>
+        <div id="mpc-status" style="font-size:11px;color:var(--text3);margin-top:.5rem"></div>
+      </div>
+
+      <div id="mpc-cols" style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1rem"></div>
+
+      <div class="card">
+        <div class="card-title">Сравнение каналов</div>
+        <div class="table-wrap" style="border:none">
+          <table>
+            <thead><tr>
+              <th>Показатель</th>
+              <th class="r" id="mpc-h0">Маркетплейс</th>
+              <th class="r" id="mpc-h1">Опт</th>
+              <th class="r">Разница</th>
+            </tr></thead>
+            <tbody id="mpc-cmp"></tbody>
+          </table>
+        </div>
+        <div style="font-size:11px;color:var(--text3);margin-top:.6rem">
+          Разница считается как «первая колонка минус вторая»; для процентов — в процентных пунктах.
         </div>
       </div>
     </div>
@@ -3920,6 +3962,7 @@ function renderChannels() {
 
   C._detail = detail;
   C._channels = channels;
+  try { mpcRender(); } catch(e) {}
 }
 
 // ══════════════════════════════════════════════════════════════════════════
@@ -4443,6 +4486,7 @@ function backupAll() {
     calcVersions: S.calcVersions || {},
     // цены закупок тоже сохраняем — вдруг понадобятся
     purchasePrices: S.purchasePrices || {},
+    mpCalc: (typeof MPC !== 'undefined' && MPC) ? MPC : null,
   };
   const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
@@ -4485,6 +4529,10 @@ function restoreAll(inp) {
         S.calcVersions = b.calcVersions; calcVersSave();
         restored.push('версии расчёта (' + Object.keys(b.calcVersions).length + ')');
       }
+      if (b.mpCalc && Array.isArray(b.mpCalc.cols)) {
+        MPC = b.mpCalc; mpcSave();
+        restored.push('калькулятор МП/опт');
+      }
       if (b.purchasePrices && typeof b.purchasePrices === 'object' && Object.keys(b.purchasePrices).length && !Object.keys(S.purchasePrices||{}).length) {
         S.purchasePrices = b.purchasePrices;
         restored.push('цены закупок (' + Object.keys(b.purchasePrices).length + ')');
@@ -4495,6 +4543,7 @@ function restoreAll(inp) {
       try { refreshCalcVersionUI(); } catch(_){}
       try { renderPricebook(); } catch(_){}
       try { renderPricesEditor(); } catch(_){}
+      try { mpcRender(); } catch(_){}
       if (S.calcRows && S.calcRows.length) runCalc(true);
       alert('Восстановлено:\n• ' + (restored.join('\n• ') || 'нет данных') + '\n\nНажмите «Обновить расчёт» если нужно.');
     } catch(err) {
@@ -4598,7 +4647,341 @@ function exportCSV() {
   XLSX.writeFile(wb, `sebestoimost_${date}.xlsx`);
 }
 
-console.log('%c\u2713 IRIX COST v5.5 (fix-2026-07-26) \u2014 \u0444\u0430\u0439\u043b \u0437\u0430\u0433\u0440\u0443\u0436\u0435\u043d \u043f\u043e\u043b\u043d\u043e\u0441\u0442\u044c\u044e', 'color:#00E38A;font-weight:bold;font-size:14px');
+
+// ══════════════════════════════════════════════════════════════════════════
+// КАЛЬКУЛЯТОР «МАРКЕТПЛЕЙС vs ОПТ»
+// Выручка / количество / себестоимость — из вкладки «Каналы продаж»
+// (C._channels, то есть нормативная себестоимость по спецификациям).
+// Расходы площадки вводятся руками: ₽ или % от выручки ЭТОГО канала.
+//   Чистая выручка = выручка − расходы площадки
+//   Маржа         = выручка − расходы площадки − себестоимость
+//   Маржа к выручке, %        = маржа / выручка × 100
+//   Маржа к чистой выручке, % = маржа / чистая выручка × 100
+// ══════════════════════════════════════════════════════════════════════════
+const LS_MPC = 'costcalc_mpcalc';
+
+const MPC_DEF = () => ({ cols: [
+  { title: 'Маркетплейс', channel: '', rev: 0, cost: 0, qty: 0, exp: [
+    { n: 'Комиссия площадки',     v: 20, t: '%' },
+    { n: 'Логистика и доставка',  v: 0,  t: '%' },
+    { n: 'Хранение',              v: 0,  t: '₽' },
+    { n: 'Эквайринг',             v: 0,  t: '%' },
+    { n: 'Реклама и продвижение', v: 0,  t: '₽' },
+    { n: 'Возвраты и брак',       v: 0,  t: '%' },
+    { n: 'Прочее',                v: 0,  t: '₽' }
+  ]},
+  { title: 'Опт', channel: '', rev: 0, cost: 0, qty: 0, exp: [
+    { n: 'Доставка до клиента',   v: 0, t: '₽' },
+    { n: 'Ретро-бонус / скидка',  v: 0, t: '%' },
+    { n: 'Прочее',                v: 0, t: '₽' }
+  ]}
+]});
+
+let MPC = MPC_DEF();
+
+// Названия, по которым канал опознаётся как маркетплейс при автоподстановке
+const MPC_RE = /маркетплейс|market|ozon|озон|wildberr|вайлдберр|\bwb\b|яндекс|мегамаркет|сбермегамаркет|авито|lamoda|ламода/i;
+
+function mpcLoad() {
+  const s = lsLoad(LS_MPC);
+  if (s && Array.isArray(s.cols) && s.cols.length === 2) MPC = s;
+}
+function mpcSave() { lsSave(LS_MPC, MPC); }
+
+function mpcNum(v) {
+  const x = parseFloat(String(v == null ? '' : v).replace(/\s|\u00a0/g, '').replace(',', '.'));
+  return isNaN(x) ? 0 : x;
+}
+function mpcAttr(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+// Все расчёты одной колонки в одном месте — чтобы экран, сравнение и выгрузка
+// не считали каждый по-своему
+function mpcCalc(c) {
+  const rev = mpcNum(c.rev), cost = mpcNum(c.cost), qty = mpcNum(c.qty);
+  let exp = 0;
+  const lines = (c.exp || []).map(e => {
+    const v = mpcNum(e.v);
+    const sum = e.t === '%' ? rev * v / 100 : v;   // процент — всегда от валовой выручки
+    exp += sum;
+    return { n: e.n, v, t: e.t, sum };
+  });
+  const net = rev - exp;
+  const margin = net - cost;
+  return {
+    rev, cost, qty, exp, lines, net, margin,
+    mGross:  rev !== 0 ? margin / rev * 100 : 0,
+    mNet:    net !== 0 ? margin / net * 100 : 0,
+    expPct:  rev !== 0 ? exp / rev * 100 : 0,
+    costPct: rev !== 0 ? cost / rev * 100 : 0,
+    revU:  qty > 0 ? rev / qty : 0,
+    expU:  qty > 0 ? exp / qty : 0,
+    costU: qty > 0 ? cost / qty : 0,
+    marU:  qty > 0 ? margin / qty : 0
+  };
+}
+
+function mpcChannelList() {
+  return (typeof C !== 'undefined' && C._channels) ? C._channels : [];
+}
+function mpcOptions(sel) {
+  return '<option value="">— ввести вручную —</option>' +
+    mpcChannelList().map(ch =>
+      `<option value="${mpcAttr(ch.channel)}"${ch.channel === sel ? ' selected' : ''}>${mpcAttr(ch.channel)}</option>`
+    ).join('');
+}
+
+// Выбор канала: подставляем выручку, себестоимость и количество из расчёта
+function mpcPick(i, name) {
+  const col = MPC.cols[i]; if (!col) return;
+  col.channel = name || '';
+  const ch = mpcChannelList().find(x => x.channel === name);
+  if (ch) {
+    col.rev  = Math.round((ch.rev  || 0) * 100) / 100;
+    col.cost = Math.round((ch.cost || 0) * 100) / 100;
+    col.qty  = ch.qty || 0;
+  }
+  mpcSave(); mpcRender();
+}
+
+function mpcPullAll() {
+  const list = mpcChannelList();
+  if (!list.length) {
+    alert('Каналы ещё не рассчитаны.\n\nОткройте вкладку «Каналы продаж», загрузите файл продаж по каналам и нажмите «Рассчитать по каналам» — после этого выручка и себестоимость подтянутся сюда сами.');
+    return;
+  }
+  if (!MPC.cols[0].channel) {
+    const mp = list.find(x => MPC_RE.test(x.channel));
+    if (mp) MPC.cols[0].channel = mp.channel;
+  }
+  if (!MPC.cols[1].channel) {
+    const op = list.find(x => x.channel !== MPC.cols[0].channel && !MPC_RE.test(x.channel))
+            || list.find(x => x.channel !== MPC.cols[0].channel);
+    if (op) MPC.cols[1].channel = op.channel;
+  }
+  MPC.cols.forEach((c, i) => {
+    const ch = list.find(x => x.channel === c.channel);
+    if (ch) {
+      c.rev  = Math.round((ch.rev  || 0) * 100) / 100;
+      c.cost = Math.round((ch.cost || 0) * 100) / 100;
+      c.qty  = ch.qty || 0;
+    }
+  });
+  mpcSave(); mpcRender();
+}
+
+function mpcSetCol(i, field, val) {
+  const col = MPC.cols[i]; if (!col) return;
+  col[field] = (field === 'title') ? String(val) : mpcNum(val);
+  mpcSave(); mpcRender();
+}
+function mpcSetExp(i, j, field, val) {
+  const e = MPC.cols[i] && MPC.cols[i].exp[j]; if (!e) return;
+  e[field] = (field === 'v') ? mpcNum(val) : String(val);
+  mpcSave(); mpcRender();
+}
+function mpcAddExp(i) {
+  MPC.cols[i].exp.push({ n: '', v: 0, t: '₽' });
+  mpcSave(); mpcRender();
+  setTimeout(() => {
+    const inps = document.querySelectorAll(`#mpc-exp-${i} input[data-f="n"]`);
+    if (inps.length) inps[inps.length - 1].focus();
+  }, 40);
+}
+function mpcDelExp(i, j) {
+  MPC.cols[i].exp.splice(j, 1);
+  mpcSave(); mpcRender();
+}
+function mpcReset() {
+  if (!confirm('Сбросить калькулятор к настройкам по умолчанию? Введённые расходы будут удалены.')) return;
+  MPC = MPC_DEF();
+  mpcSave(); mpcRender();
+}
+
+function mpcCard(c, i) {
+  const r = mpcCalc(c);
+  const marCol = r.margin >= 0 ? 'var(--green)' : 'var(--red)';
+  const rows = r.lines.map((e, j) => `<tr>
+      <td style="padding:.2rem .35rem;border:none"><input class="inp" data-f="n" style="font-size:12px;padding:.28rem .5rem" value="${mpcAttr(e.n)}" placeholder="статья расхода" onchange="mpcSetExp(${i},${j},'n',this.value)"></td>
+      <td style="padding:.2rem .25rem;border:none;text-align:right"><input class="inp" type="number" step="0.01" style="width:78px;font-size:12px;padding:.28rem .4rem;text-align:right;font-family:var(--mono)" value="${e.v || ''}" placeholder="0" onchange="mpcSetExp(${i},${j},'v',this.value)"></td>
+      <td style="padding:.2rem .25rem;border:none"><select style="padding:.24rem .35rem;font-size:12px" onchange="mpcSetExp(${i},${j},'t',this.value)"><option value="₽"${e.t !== '%' ? ' selected' : ''}>₽</option><option value="%"${e.t === '%' ? ' selected' : ''}>%</option></select></td>
+      <td style="padding:.2rem .35rem;border:none;text-align:right;font-family:var(--mono);font-size:12px;color:${e.sum ? 'var(--text)' : 'var(--text3)'}">${e.sum ? fmt(e.sum) : '—'}</td>
+      <td style="padding:.2rem .1rem;border:none"><button class="btn btn-sm btn-ghost" style="padding:0 5px;color:var(--red);font-size:15px" title="удалить строку" onclick="mpcDelExp(${i},${j})">×</button></td>
+    </tr>`).join('');
+
+  const line = (label, value, extra) => `<div style="display:flex;justify-content:space-between;align-items:baseline;gap:.5rem;padding:.15rem 0;font-size:12px">
+      <span style="color:var(--text2)">${label}</span>
+      <span style="font-family:var(--mono);white-space:nowrap">${value}${extra ? `<span style="color:var(--text3);font-size:11px;margin-left:.35rem">${extra}</span>` : ''}</span>
+    </div>`;
+
+  return `<div class="card" style="margin:0">
+    <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.75rem">
+      <input class="inp" style="flex:1;font-size:15px;font-weight:600;padding:.4rem .6rem" value="${mpcAttr(c.title)}" onchange="mpcSetCol(${i},'title',this.value)">
+    </div>
+
+    <div style="display:grid;grid-template-columns:auto 1fr;gap:.4rem .6rem;align-items:center;margin-bottom:.9rem">
+      <span style="font-size:12px;color:var(--text2)">Канал</span>
+      <select style="width:100%" onchange="mpcPick(${i},this.value)">${mpcOptions(c.channel)}</select>
+
+      <span style="font-size:12px;color:var(--text2)">Выручка, ₽</span>
+      <input class="inp" type="number" step="0.01" style="font-family:var(--mono);text-align:right" value="${c.rev || ''}" placeholder="0" onchange="mpcSetCol(${i},'rev',this.value)">
+
+      <span style="font-size:12px;color:var(--text2)">Себестоимость, ₽</span>
+      <input class="inp" type="number" step="0.01" style="font-family:var(--mono);text-align:right" value="${c.cost || ''}" placeholder="0" onchange="mpcSetCol(${i},'cost',this.value)">
+
+      <span style="font-size:12px;color:var(--text2)">Количество, шт</span>
+      <input class="inp" type="number" step="1" style="font-family:var(--mono);text-align:right" value="${c.qty || ''}" placeholder="0" onchange="mpcSetCol(${i},'qty',this.value)">
+    </div>
+
+    <div style="font-size:11px;color:var(--text2);text-transform:uppercase;letter-spacing:.05em;margin-bottom:.3rem">Расходы канала</div>
+    <table style="width:100%;border-collapse:collapse"><tbody id="mpc-exp-${i}">${rows}</tbody></table>
+    <div style="display:flex;align-items:center;gap:.5rem;margin-top:.4rem">
+      <button class="btn btn-sm" onclick="mpcAddExp(${i})">+ строка расхода</button>
+      <span style="flex:1"></span>
+      <span style="font-size:11px;color:var(--text3)">% считается от выручки канала</span>
+    </div>
+
+    <div style="margin-top:.9rem;padding:.75rem .85rem;background:var(--bg3);border-radius:var(--r)">
+      ${line('Выручка', fmt(r.rev) + ' ₽')}
+      ${line('− Расходы канала', fmt(r.exp) + ' ₽', r.expPct.toFixed(1) + '%')}
+      <div style="border-top:1px solid var(--border);margin:.4rem 0"></div>
+      <div style="display:flex;justify-content:space-between;align-items:baseline;gap:.5rem">
+        <span style="font-size:12px;color:var(--text2)">= Чистая выручка</span>
+        <span style="font-family:var(--mono);font-size:17px;font-weight:500;color:var(--accent)">${fmt(r.net)} ₽</span>
+      </div>
+      ${line('− Себестоимость', fmt(r.cost) + ' ₽', r.costPct.toFixed(1) + '%')}
+      <div style="border-top:1px solid var(--border);margin:.4rem 0"></div>
+      <div style="display:flex;justify-content:space-between;align-items:baseline;gap:.5rem">
+        <span style="font-size:13px;font-weight:500">= Маржа</span>
+        <span style="font-family:var(--mono);font-size:22px;font-weight:500;color:${marCol}">${fmt(r.margin)} ₽</span>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem;margin-top:.6rem">
+        <div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);padding:.45rem .6rem">
+          <div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.04em">Маржа к выручке</div>
+          <div style="font-family:var(--mono);font-size:16px;color:${marCol}">${r.mGross.toFixed(1)}%</div>
+        </div>
+        <div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);padding:.45rem .6rem">
+          <div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.04em">Маржа к чистой выручке</div>
+          <div style="font-family:var(--mono);font-size:16px;color:${marCol}">${r.mNet.toFixed(1)}%</div>
+        </div>
+      </div>
+      ${r.qty > 0 ? `<div style="margin-top:.55rem;padding-top:.5rem;border-top:1px solid var(--border);font-size:11px;color:var(--text3);font-family:var(--mono)">
+        на единицу: выручка ${fmt(r.revU)} · расходы ${fmt(r.expU)} · себест. ${fmt(r.costU)} · маржа <span style="color:${marCol}">${fmt(r.marU)}</span> ₽</div>` : ''}
+    </div>
+  </div>`;
+}
+
+function mpcRender() {
+  const wrap = document.getElementById('mpc-cols');
+  if (!wrap) return;
+
+  const list = mpcChannelList();
+  const st = document.getElementById('mpc-status');
+  if (st) st.innerHTML = list.length
+    ? `<span style="color:var(--green)">✓ каналы из расчёта: ${list.map(c => mpcAttr(c.channel) + ' — ' + fmt(c.rev) + ' ₽').join(' · ')}</span>`
+    : '<span style="color:var(--amber)">⚠ каналы ещё не рассчитаны — либо заполните выручку и себестоимость вручную, либо зайдите на «Каналы продаж» и нажмите «Рассчитать по каналам»</span>';
+
+  wrap.innerHTML = MPC.cols.map((c, i) => mpcCard(c, i)).join('');
+  mpcRenderCompare();
+}
+
+function mpcRenderCompare() {
+  const body = document.getElementById('mpc-cmp');
+  if (!body) return;
+  const a = mpcCalc(MPC.cols[0]), b = mpcCalc(MPC.cols[1]);
+  const h0 = document.getElementById('mpc-h0'), h1 = document.getElementById('mpc-h1');
+  if (h0) h0.textContent = MPC.cols[0].title || 'Канал 1';
+  if (h1) h1.textContent = MPC.cols[1].title || 'Канал 2';
+
+  const M = (l, x, y, bold) => ({ l, x, y, kind: 'money', bold });
+  const P = (l, x, y, bold) => ({ l, x, y, kind: 'pct', bold });
+  const Q = (l, x, y) => ({ l, x, y, kind: 'qty' });
+
+  const rows = [
+    M('Выручка', a.rev, b.rev),
+    M('Расходы канала', a.exp, b.exp),
+    P('Расходы к выручке, %', a.expPct, b.expPct),
+    M('Чистая выручка', a.net, b.net, true),
+    M('Себестоимость', a.cost, b.cost),
+    M('Маржа', a.margin, b.margin, true),
+    P('Маржа к выручке, %', a.mGross, b.mGross, true),
+    P('Маржа к чистой выручке, %', a.mNet, b.mNet, true),
+    Q('Количество, шт', a.qty, b.qty),
+    M('Выручка на единицу', a.revU, b.revU),
+    M('Себестоимость на единицу', a.costU, b.costU),
+    M('Маржа на единицу', a.marU, b.marU)
+  ];
+
+  body.innerHTML = rows.map(r => {
+    const d = r.x - r.y;
+    const val = v => r.kind === 'pct' ? v.toFixed(1) + '%' : fmt(v);
+    const dTxt = r.kind === 'pct' ? (d >= 0 ? '+' : '') + d.toFixed(1) + ' п.п.'
+                                  : (d >= 0 ? '+' : '') + fmt(d);
+    // Для расходов и себестоимости «больше» — это хуже, поэтому цвет разницы инвертируем
+    const worseIfMore = /расход|себестоим/i.test(r.l);
+    const good = worseIfMore ? d < 0 : d > 0;
+    const dCol = Math.abs(d) < 0.005 ? 'var(--text3)' : (good ? 'var(--green)' : 'var(--red)');
+    const w = r.bold ? '600' : '400';
+    return `<tr>
+      <td style="font-weight:${w}">${r.l}</td>
+      <td class="r" style="font-weight:${w}">${val(r.x)}</td>
+      <td class="r" style="font-weight:${w}">${val(r.y)}</td>
+      <td class="r" style="color:${dCol};font-weight:${w}">${dTxt}</td>
+    </tr>`;
+  }).join('');
+}
+
+function mpcExport() {
+  const a = mpcCalc(MPC.cols[0]), b = mpcCalc(MPC.cols[1]);
+  const t0 = MPC.cols[0].title || 'Канал 1', t1 = MPC.cols[1].title || 'Канал 2';
+  const wb = XLSX.utils.book_new();
+
+  const rows = [
+    ['Показатель', t0, t1, 'Разница'],
+    ['Канал (источник)', MPC.cols[0].channel || 'вручную', MPC.cols[1].channel || 'вручную', ''],
+    ['Выручка, ₽', +a.rev.toFixed(2), +b.rev.toFixed(2), +(a.rev - b.rev).toFixed(2)],
+    ['Расходы канала, ₽', +a.exp.toFixed(2), +b.exp.toFixed(2), +(a.exp - b.exp).toFixed(2)],
+    ['Расходы к выручке, %', +a.expPct.toFixed(1), +b.expPct.toFixed(1), +(a.expPct - b.expPct).toFixed(1)],
+    ['Чистая выручка, ₽', +a.net.toFixed(2), +b.net.toFixed(2), +(a.net - b.net).toFixed(2)],
+    ['Себестоимость, ₽', +a.cost.toFixed(2), +b.cost.toFixed(2), +(a.cost - b.cost).toFixed(2)],
+    ['Маржа, ₽', +a.margin.toFixed(2), +b.margin.toFixed(2), +(a.margin - b.margin).toFixed(2)],
+    ['Маржа к выручке, %', +a.mGross.toFixed(1), +b.mGross.toFixed(1), +(a.mGross - b.mGross).toFixed(1)],
+    ['Маржа к чистой выручке, %', +a.mNet.toFixed(1), +b.mNet.toFixed(1), +(a.mNet - b.mNet).toFixed(1)],
+    ['Количество, шт', a.qty, b.qty, +(a.qty - b.qty).toFixed(2)],
+    ['Выручка на единицу, ₽', +a.revU.toFixed(2), +b.revU.toFixed(2), +(a.revU - b.revU).toFixed(2)],
+    ['Себестоимость на единицу, ₽', +a.costU.toFixed(2), +b.costU.toFixed(2), +(a.costU - b.costU).toFixed(2)],
+    ['Маржа на единицу, ₽', +a.marU.toFixed(2), +b.marU.toFixed(2), +(a.marU - b.marU).toFixed(2)]
+  ];
+  const ws = XLSX.utils.aoa_to_sheet([
+    ['Сравнение экономики каналов'],
+    ['Дата', new Date().toLocaleString('ru-RU')],
+    [],
+    ...rows
+  ]);
+  ws['!cols'] = [{ wch: 30 }, { wch: 20 }, { wch: 20 }, { wch: 18 }];
+  XLSX.utils.book_append_sheet(wb, ws, 'Сравнение');
+
+  const eh = ['Канал', 'Статья расхода', 'Значение', 'Тип', 'Сумма, ₽', 'Доля выручки, %'];
+  const ed = [];
+  [[MPC.cols[0], a, t0], [MPC.cols[1], b, t1]].forEach(([col, r, title]) => {
+    r.lines.forEach(e => ed.push([title, e.n, e.v, e.t, +e.sum.toFixed(2),
+      r.rev ? +(e.sum / r.rev * 100).toFixed(2) : '']));
+    ed.push([title, 'ИТОГО расходы', '', '', +r.exp.toFixed(2), +r.expPct.toFixed(2)]);
+  });
+  const ws2 = XLSX.utils.aoa_to_sheet([eh, ...ed]);
+  ws2['!cols'] = [{ wch: 22 }, { wch: 30 }, { wch: 12 }, { wch: 8 }, { wch: 16 }, { wch: 18 }];
+  XLSX.utils.book_append_sheet(wb, ws2, 'Расходы');
+
+  const date = new Date().toLocaleDateString('ru-RU').replace(/\./g, '-');
+  XLSX.writeFile(wb, `sravnenie_kanalov_${date}.xlsx`);
+}
+
+try { mpcLoad(); mpcRender(); } catch (e) { console.warn('mpcalc init:', e); }
+
+console.log('%c\u2713 IRIX COST v5.6 (fix-2026-07-27) \u2014 \u0444\u0430\u0439\u043b \u0437\u0430\u0433\u0440\u0443\u0436\u0435\u043d \u043f\u043e\u043b\u043d\u043e\u0441\u0442\u044c\u044e', 'color:#00E38A;font-weight:bold;font-size:14px');
 window.__CALC_OK__ = true;
 </script>
 </body>
