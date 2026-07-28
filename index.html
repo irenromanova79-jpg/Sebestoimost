@@ -270,6 +270,41 @@ select:focus{outline:none;border-color:var(--accent)}
           <input type="file" id="f-restore" accept=".json" style="display:none" onchange="restoreAll(this)">
         </div>
       </div>
+      <div id="sy-newbar" style="display:none;align-items:center;gap:.75rem;background:rgba(59,130,246,.12);border:1px solid rgba(59,130,246,.4);border-radius:var(--r2);padding:.7rem 1rem;margin-bottom:1rem">
+        <span>🔄</span>
+        <div style="flex:1;font-size:13px" id="sy-newtext"></div>
+        <button class="btn btn-sm btn-primary" onclick="syPull()">Загрузить</button>
+        <button class="btn btn-sm btn-ghost" onclick="document.getElementById('sy-newbar').style.display='none'">Позже</button>
+      </div>
+
+      <div style="background:rgba(59,130,246,.07);border:1px solid rgba(59,130,246,.28);border-radius:var(--r2);padding:1rem 1.25rem;margin-bottom:1rem">
+        <div style="display:flex;align-items:center;gap:.75rem;flex-wrap:wrap;margin-bottom:.6rem">
+          <div style="font-size:14px;font-weight:600">🌐 Общие данные</div>
+          <div style="font-size:12px;color:var(--text2);flex:1;min-width:260px">Один человек выгружает данные на сервис — остальные открывают приложение и сразу видят расчёт, без файлов.</div>
+          <button class="btn btn-sm btn-ghost" onclick="syToggleCfg()" id="sy-cfg-btn" style="font-size:12px">⚙ Настройка</button>
+        </div>
+        <div id="sy-cfg" style="display:none;border-top:1px solid var(--border);padding-top:.7rem;margin-bottom:.7rem">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem">
+            <label style="font-size:12px;color:var(--text2)">Адрес сервиса (ссылка вида …/exec)
+              <input id="sy-url" class="inp" style="width:100%;margin-top:.2rem" placeholder="https://script.google.com/macros/s/…/exec" onchange="sySet('url',this.value)">
+            </label>
+            <label style="font-size:12px;color:var(--text2)">Ключ доступа
+              <input id="sy-key" class="inp" type="password" style="width:100%;margin-top:.2rem" placeholder="общий пароль" onchange="sySet('key',this.value)">
+            </label>
+            <label style="font-size:12px;color:var(--text2)">Ваше имя (видно коллегам)
+              <input id="sy-me" class="inp" style="width:100%;margin-top:.2rem" placeholder="Ирина" onchange="sySet('me',this.value)">
+            </label>
+            <div style="font-size:11px;color:var(--text2);align-self:end">Адрес и ключ хранятся только в вашем браузере и в код приложения не попадают.</div>
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;gap:.6rem;flex-wrap:wrap" id="sy-actions">
+          <button class="btn btn-sm btn-primary" onclick="syPublish()">⬆ Выгрузить данные для всех</button>
+          <button class="btn btn-sm btn-ghost" onclick="syPull()">⬇ Загрузить общие данные</button>
+          <div id="sy-status" style="font-size:12px"></div>
+          <div id="sy-last" style="font-size:11px;color:var(--text2);margin-left:auto"></div>
+        </div>
+      </div>
+
       <div class="alert alert-blue">
         <span>ℹ</span>
         <div>Загрузите три файла из 1С:УНФ. Порядок не важен. После загрузки нажмите <strong>▶ Рассчитать</strong> в шапке.</div>
@@ -277,10 +312,14 @@ select:focus{outline:none;border-color:var(--accent)}
       <div class="upload-grid">
         <div class="upload-zone" id="uz-sales" onclick="document.getElementById('f-sales').click()">
           <span class="upload-icon">🛒</span>
-          <div class="upload-title">Продажи</div>
+          <div class="upload-title">Продажи <span class="badge badge-gray" style="font-size:10px">сохраняются</span></div>
           <div class="upload-hint">Реализация товаров<br>Номенклатура + Кол-во + Выручка</div>
           <div class="upload-status" id="us-sales">—</div>
           <input type="file" id="f-sales" accept=".xlsx,.xls,.csv" style="display:none" onchange="loadSales(this)">
+        </div>
+        <div id="cache-label-sales" style="margin-top:.25rem;padding:0 .25rem"></div>
+        <div style="text-align:right;margin-top:.25rem">
+          <button class="btn btn-sm btn-ghost" style="font-size:11px;color:var(--red)" onclick="lsClear('costcalc_sales');S.sales=[];S.ready.sales=false;setUploaded('uz-sales','us-sales','—','');document.getElementById('uz-sales').classList.remove('loaded');document.getElementById('cache-label-sales').innerHTML='';checkReady()">✕ сбросить кэш</button>
         </div>
         <div class="upload-zone" id="uz-prices" onclick="document.getElementById('f-prices').click()">
           <span class="upload-icon">🏷</span>
@@ -992,6 +1031,7 @@ const LS = {
   PRICEBOOK: 'costcalc_pricebook',
   SPECS:     'costcalc_specs',
   PRICES:    'costcalc_prices',
+  SALES:     'costcalc_sales',
   USERSPECS: 'costcalc_userspecs',
   NORMVERS:  'costcalc_normversions',
   CALCVERS:  'costcalc_calcversions',
@@ -1132,6 +1172,23 @@ function specsSave(fname) {
   if (ok) updateCacheLabel('specs', fname, new Date().toLocaleDateString('ru-RU'));
 }
 
+function salesLoad() {
+  const saved = lsLoad(LS.SALES);
+  if (saved && saved.sales && saved.sales.length) {
+    S.sales = saved.sales;
+    S.ready.sales = true;
+    setUploaded('uz-sales', 'us-sales', saved.fname || 'из кэша', S.sales.length + ' позиций');
+    updateCacheLabel('sales', saved.fname, saved.date);
+    return true;
+  }
+  return false;
+}
+function salesSave(fname) {
+  const date = new Date().toLocaleDateString('ru-RU');
+  const ok = lsSave(LS.SALES, { sales: S.sales, fname, date });
+  if (ok) updateCacheLabel('sales', fname, date);
+}
+
 function pricesLoad() {
   const saved = lsLoad(LS.PRICES);
   if (saved && saved.prices && Object.keys(saved.prices).length > 0) {
@@ -1203,13 +1260,15 @@ try { userSpecsLoad(); } catch(e) { console.warn('userSpecsLoad error:', e); S.u
 try { normVersLoad(); refreshNormVersionUI(); } catch(e) { console.warn('normVersLoad error:', e); S.normVersions = {}; }
 try { calcVersLoad(); refreshCalcVersionUI(); } catch(e) { console.warn('calcVersLoad error:', e); S.calcVersions = {}; }
 
-let specsRestored = false, pricesRestored = false;
+let specsRestored = false, pricesRestored = false, salesRestored = false;
+try { salesRestored = salesLoad(); } catch(e) { console.warn('salesLoad error:', e); S.sales = []; S.ready.sales = false; }
 try { specsRestored = specsLoad(); } catch(e) { console.warn('specsLoad error:', e); S.specs = {}; S.allMaterials = new Set(); S.ready.specs = false; }
 try { pricesRestored = pricesLoad(); } catch(e) { console.warn('pricesLoad error:', e); S.purchasePrices = {}; S.ready.prices = false; }
 try { applyUserSpecs(); } catch(e) { console.warn('applyUserSpecs error:', e); }
 
-if (specsRestored || pricesRestored) {
+if (specsRestored || pricesRestored || salesRestored) {
   checkReady();
+  if (specsRestored && pricesRestored && salesRestored) setTimeout(() => { try { runCalc(true); } catch(e) {} }, 150);
   if (specsRestored && S.allMaterials.size) { try { renderPricesEditor(); } catch(e) { console.warn('renderPricesEditor error:', e); } }
 } else {
   // Проверяем — есть ли данные в localStorage но не загрузились?
@@ -1351,6 +1410,7 @@ function loadSales(inp) {
     }
     S.ready.sales = true;
     setUploaded('uz-sales', 'us-sales', inp.files[0].name, S.sales.length + ' позиций');
+    salesSave(inp.files[0].name);
     checkReady();
     // Авторасчёт если спеки и цены уже загружены из кэша
     if (S.ready.specs && S.ready.prices) {
@@ -4980,6 +5040,218 @@ function mpcExport() {
 }
 
 try { mpcLoad(); mpcRender(); } catch (e) { console.warn('mpcalc init:', e); }
+
+
+/* ═══ Общие данные: обмен через веб-сервис (Google Apps Script) ═══════════
+   Одна сторона выгружает снимок всех данных, остальные его забирают.
+   Адрес сервиса и ключ живут в localStorage конкретного браузера — в коде
+   приложения их нет, поэтому файл можно спокойно класть на GitHub.        */
+const SY_LS = 'costcalc_sync';
+const SY = Object.assign({ url: '', key: '', me: '', at: '', by: '' }, lsLoad(SY_LS) || {});
+
+function syCfgSave() { lsSave(SY_LS, SY); }
+function sySet(field, v) { SY[field] = String(v || '').trim(); syCfgSave(); syRender(); }
+function syToggleCfg() {
+  const el = document.getElementById('sy-cfg');
+  if (!el) return;
+  el.style.display = el.style.display === 'none' ? 'block' : 'none';
+}
+function syWhen(iso) {
+  if (!iso) return '—';
+  try { return new Date(iso).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }); }
+  catch (e) { return iso; }
+}
+function syStatus(html, color) {
+  const el = document.getElementById('sy-status');
+  if (el) el.innerHTML = html ? '<span style="color:' + (color || 'var(--text2)') + '">' + html + '</span>' : '';
+}
+function syRender() {
+  const u = document.getElementById('sy-url'), k = document.getElementById('sy-key'), n = document.getElementById('sy-me');
+  if (u && !u.value) u.value = SY.url || '';
+  if (k && !k.value) k.value = SY.key || '';
+  if (n && !n.value) n.value = SY.me || '';
+  const act = document.getElementById('sy-actions');
+  if (act) act.style.opacity = (SY.url && SY.key) ? '1' : '.5';
+  const last = document.getElementById('sy-last');
+  if (last) last.innerHTML = SY.at ? 'на сервисе: ' + syWhen(SY.at) + (SY.by ? ' · ' + SY.by : '') : '';
+}
+
+/* — снимок и его применение — */
+function sySnapshot() {
+  return {
+    v: 1,
+    at: new Date().toISOString(),
+    by: SY.me || 'без имени',
+    app: 'IRIX COST v5.6',
+    sales: S.sales || [],
+    purchasePrices: S.purchasePrices || {},
+    pricesByChar: S.pricesByChar || {},
+    stockPrices: S.stockPrices || {},
+    specs: S.specs || {},
+    specsLayout: S.specsLayout || 'old',
+    specsCompWithChar: S.specsCompWithChar || 0,
+    allMaterials: [...(S.allMaterials || [])],
+    pricebook: S.pricebook || {},
+    userSpecs: S.userSpecs || {},
+    channels: { rows: C.rows || [], fname: C.fname || '', info: C.info || '', groups: C.groups || [] },
+    vypusk: { rows: V.rows || [], fname: V.fname || '' }
+  };
+}
+
+function syApply(d) {
+  const src = 'от ' + (d.by || 'коллеги') + ' · ' + syWhen(d.at);
+  if (d.specs && Object.keys(d.specs).length) {
+    S.specs = d.specs;
+    invalidateSpecIndex();
+    S.specsLayout = d.specsLayout || 'old';
+    S.specsCompWithChar = d.specsCompWithChar || 0;
+    S.allMaterials = new Set(d.allMaterials || []);
+    S.ready.specs = true;
+    setUploaded('uz-specs', 'us-specs', src, Object.keys(S.specs).length + ' спецификаций');
+    const uz = document.getElementById('uz-stock'); if (uz) uz.style.display = 'block';
+    specsSave(src);
+  }
+  if (d.purchasePrices || d.pricesByChar) {
+    S.purchasePrices = d.purchasePrices || {};
+    S.pricesByChar = d.pricesByChar || {};
+    S.ready.prices = true;
+    const cnt = Object.keys(S.purchasePrices).length + Object.keys(S.pricesByChar).length;
+    setUploaded('uz-prices', 'us-prices', src, cnt + ' позиций');
+    pricesSave(src);
+  }
+  if (d.stockPrices) S.stockPrices = d.stockPrices;
+  if (d.sales && d.sales.length) {
+    S.sales = d.sales;
+    S.ready.sales = true;
+    setUploaded('uz-sales', 'us-sales', src, S.sales.length + ' позиций');
+    salesSave(src);
+  }
+  // справочник цен: значения с сервиса главнее, свои строки остаются
+  if (d.pricebook && Object.keys(d.pricebook).length) {
+    S.pricebook = Object.assign({}, S.pricebook || {}, d.pricebook);
+    pbSave();
+  }
+  if (d.userSpecs && Object.keys(d.userSpecs).length) {
+    S.userSpecs = Object.assign({}, S.userSpecs || {}, d.userSpecs);
+    userSpecsSave();
+    try { applyUserSpecs(); } catch (e) {}
+  }
+  if (d.channels) {
+    C.rows = d.channels.rows || []; C.fname = d.channels.fname || '';
+    C.info = d.channels.info || ''; C.groups = d.channels.groups || [];
+  }
+  if (d.vypusk) { V.rows = d.vypusk.rows || []; V.fname = d.vypusk.fname || ''; }
+
+  SY.at = d.at; SY.by = d.by; syCfgSave();
+  try { checkReady(); } catch (e) {}
+  try { if (S.ready.specs && S.ready.prices && S.ready.sales) runCalc(true); } catch (e) {}
+  try { renderPricesEditor(); } catch (e) {}
+  try { if (C.rows.length) renderChannels(); } catch (e) {}
+  try { if (V.rows.length) renderVypusk(); } catch (e) {}
+  syRender();
+}
+
+/* — упаковка: gzip прямо в браузере, 2 МБ превращаются в ~300 КБ — */
+async function syPack(obj) {
+  const json = JSON.stringify(obj);
+  if (typeof CompressionStream === 'undefined') return { enc: 'plain', body: json };
+  const stream = new Blob([json]).stream().pipeThrough(new CompressionStream('gzip'));
+  const buf = new Uint8Array(await new Response(stream).arrayBuffer());
+  let bin = '';
+  const CH = 0x8000;
+  for (let i = 0; i < buf.length; i += CH) bin += String.fromCharCode.apply(null, buf.subarray(i, i + CH));
+  return { enc: 'gzip', body: btoa(bin) };
+}
+async function syUnpack(enc, body) {
+  if (enc !== 'gzip') return JSON.parse(body);
+  const bin = atob(body);
+  const arr = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+  const stream = new Blob([arr]).stream().pipeThrough(new DecompressionStream('gzip'));
+  return JSON.parse(await new Response(stream).text());
+}
+
+/* — обмен с сервисом — */
+async function syCall(payload) {
+  if (!SY.url) throw new Error('не задан адрес сервиса');
+  let r;
+  try {
+    r = await fetch(SY.url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // без этого браузер шлёт OPTIONS, а Apps Script его не понимает
+      body: JSON.stringify(Object.assign({ key: SY.key }, payload))
+    });
+  } catch (e) {
+    throw new Error('не дозвонился до сервиса — проверьте адрес, интернет и что развёртывание открыто «для всех»');
+  }
+  const t = await r.text();
+  let j;
+  try { j = JSON.parse(t); }
+  catch (e) { throw new Error('сервис ответил не по адресу — проверьте ссылку и что доступ открыт «для всех»'); }
+  if (!j.ok) throw new Error(j.error || 'сервис вернул ошибку');
+  return j;
+}
+
+async function syPublish() {
+  if (!SY.url || !SY.key) { syToggleCfg(); syStatus('заполните адрес сервиса и ключ', 'var(--amber)'); return; }
+  if (!S.ready.specs && !S.ready.prices && !(S.sales || []).length) {
+    syStatus('выгружать нечего — сначала загрузите файлы', 'var(--amber)'); return;
+  }
+  try {
+    syStatus('смотрю, что сейчас на сервисе…');
+    const meta = await syCall({ action: 'meta' });
+    if (meta.at && (!SY.at || meta.at > SY.at)) {
+      const ok = confirm('На сервисе данные новее ваших:\n' + syWhen(meta.at) + (meta.by ? ' · ' + meta.by : '') +
+        '\n\nВыгрузка их заменит. Продолжить?');
+      if (!ok) { syStatus(''); return; }
+    }
+    syStatus('упаковываю…');
+    const snap = sySnapshot();
+    const p = await syPack(snap);
+    syStatus('отправляю ' + Math.round(p.body.length / 1024) + ' КБ…');
+    await syCall({ action: 'put', enc: p.enc, at: snap.at, by: snap.by, data: p.body });
+    SY.at = snap.at; SY.by = snap.by; syCfgSave();
+    syStatus('✓ выгружено · ' + Math.round(p.body.length / 1024) + ' КБ', 'var(--green)');
+    syRender();
+  } catch (e) {
+    syStatus('✕ ' + e.message, 'var(--red)');
+  }
+}
+
+async function syPull() {
+  if (!SY.url || !SY.key) { syToggleCfg(); syStatus('заполните адрес сервиса и ключ', 'var(--amber)'); return; }
+  try {
+    syStatus('загружаю…');
+    const res = await syCall({ action: 'get' });
+    if (!res.data) { syStatus('на сервисе пока пусто', 'var(--amber)'); return; }
+    const d = await syUnpack(res.enc, res.data);
+    syApply(d);
+    const bar = document.getElementById('sy-newbar');
+    if (bar) bar.style.display = 'none';
+    syStatus('✓ загружено · ' + syWhen(d.at) + (d.by ? ' · ' + d.by : ''), 'var(--green)');
+  } catch (e) {
+    syStatus('✕ ' + e.message, 'var(--red)');
+  }
+}
+
+/* — при открытии: пусто → тянем сами, есть своё → предлагаем — */
+async function syBoot() {
+  syRender();
+  if (!SY.url || !SY.key) return;
+  try {
+    const m = await syCall({ action: 'meta' });
+    if (!m.at) return;
+    const empty = !S.ready.specs && !S.ready.prices;
+    if (empty) { await syPull(); return; }
+    if (!SY.at || m.at > SY.at) {
+      const bar = document.getElementById('sy-newbar');
+      const txt = document.getElementById('sy-newtext');
+      if (txt) txt.textContent = 'На сервисе более свежие данные: ' + syWhen(m.at) + (m.by ? ' · ' + m.by : '');
+      if (bar) bar.style.display = 'flex';
+    }
+  } catch (e) { /* нет сети или сервис не настроен — работаем на своих данных */ }
+}
+setTimeout(() => { try { syBoot(); } catch (e) { console.warn('syBoot:', e); } }, 500);
 
 console.log('%c\u2713 IRIX COST v5.6 (fix-2026-07-27) \u2014 \u0444\u0430\u0439\u043b \u0437\u0430\u0433\u0440\u0443\u0436\u0435\u043d \u043f\u043e\u043b\u043d\u043e\u0441\u0442\u044c\u044e', 'color:#00E38A;font-weight:bold;font-size:14px');
 window.__CALC_OK__ = true;
