@@ -384,6 +384,9 @@ select:focus{outline:none;border-color:var(--accent)}
     <div class="nav-item" data-tab="mpcalc">
       <span class="nav-icon">⚖</span> МП vs Опт
     </div>
+    <div class="nav-item" data-tab="categories">
+      <span class="nav-icon">▤</span> Категории
+    </div>
     <div class="nav-sep"></div>
     <div class="nav-label">Экспорт</div>
     <div class="nav-item" onclick="exportCSV()">
@@ -1029,6 +1032,37 @@ select:focus{outline:none;border-color:var(--accent)}
       </div>
     </div>
 
+    <!-- CATEGORIES -->
+    <div id="tab-categories" class="section">
+      <div id="cat-empty" class="empty"><span class="empty-icon">▤</span>Выполните расчёт на вкладке «Расчёт»</div>
+      <div id="cat-content" style="display:none">
+        <div class="card">
+          <div style="display:flex;align-items:center;gap:.75rem;flex-wrap:wrap">
+            <div class="card-title" style="margin:0">Сводка по категориям</div>
+            <div style="font-size:11px;color:var(--text3)">Столы — всё, где в названии «стол»; Стулья — по моделям, внутри разбивка сборный/разборный; Стеллажи — всё, где в названии «стеллаж»</div>
+            <span class="toolbar-spacer"></span>
+            <button class="btn btn-sm" onclick="exportCategorySummary()">↓ Excel</button>
+            <button class="btn btn-sm" onclick="printCategorySummary()">🖶 Печать</button>
+          </div>
+        </div>
+        <div class="card">
+          <div class="table-wrap" style="border:none">
+            <table id="cat-table">
+              <thead><tr>
+                <th>Категория / модель</th>
+                <th class="r">Кол-во</th>
+                <th class="r">Выручка, ₽</th>
+                <th class="r">Себест., ₽</th>
+                <th class="r">Маржа, ₽</th>
+                <th class="r">Маржа, %</th>
+              </tr></thead>
+              <tbody id="cat-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
   </main>
 
 </div>
@@ -1623,6 +1657,7 @@ function loadSpecs(inp) {
         const jc = rr.findIndex(s => s.includes('состав.характер'));
         const jq = rr.findIndex(s => s.includes('состав.количество'));
         const ju = rr.findIndex(s => s.includes('состав.ед'));
+        iCompChar = -1; // по умолчанию колонки характеристики компонента в новой раскладке нет
         if (jc >= 0) iCompChar = jc;
         if (jq >= 0) iQty = jq;
         if (ju >= 0) iUnit = ju;
@@ -1641,13 +1676,17 @@ function loadSpecs(inp) {
       if (!r) continue;
 
       if (newLayout) {
-        // Строка компонента — заполнена колонка «Спецификация.Состав.Номенклатура»
+        // Тип строки различаем не по «есть ли имя» (та же колонка на строке изделия
+        // хранит название изделия), а по тому, распознаётся ли количество как число —
+        // это единственный признак, который отличает строку компонента от строки изделия.
         const cname = String(r[iCompName] || '').trim();
         const c0    = String(r[0] || '').trim();
-        if (cname && cname !== 'nan') {
-          const q = parseFloat(String(r[iQty] || '').replace(',', '.'));
-          if (current && !isNaN(q)) {
-            const cch = String(r[iCompChar] || '').trim().replace(/^nan$/i, '');
+        const qRaw  = String(r[iQty] || '').trim();
+        const q     = parseFloat(qRaw.replace(',', '.'));
+        const isComponentRow = cname && cname !== 'nan' && qRaw !== '' && qRaw !== 'nan' && !isNaN(q);
+        if (isComponentRow) {
+          if (current) {
+            const cch = iCompChar >= 0 ? String(r[iCompChar] || '').trim().replace(/^nan$/i, '') : '';
             if (cch) compWithChar++;
             S.specs[current].components.push({
               name: cname,
@@ -1904,10 +1943,164 @@ function runCalc(stayOnTab) {
   try { refreshCalcVersionUI(); } catch(e) {}
   try { if (C.rows && C.rows.length) renderChannels(); } catch(e) {}
   try { if (V.rows && V.rows.length) renderVypusk(); } catch(e) {}
+  try { renderCategorySummary(); } catch(e) {}
   // After calc: show Refresh, hide Calculate
   document.getElementById('btn-calc').style.display = 'none';
   document.getElementById('btn-recalc').style.display = 'inline-flex';
   if (!stayOnTab) switchTab('calc');
+}
+
+// ── Категории (Столы / Стулья по моделям / Стеллажи) ──────────────────────
+function catHtmlEsc(s) {
+  return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+// Категория по номенклатуре. Порядок проверки важен: «стеллаж» и «стол»/«стул»
+// не пересекаются по буквам, поэтому порядок сам по себе роли не играет,
+// но проверяем явно на случай появления составных названий в будущем.
+function catClassify(nom) {
+  const n = norm(nom);
+  if (n.includes('стеллаж')) return 'shelving';
+  if (n.includes('стол')) return 'tables';
+  if (n.includes('стул')) return 'chairs';
+  return 'other';
+}
+
+function catIsKnockdown(nom, char) {
+  return norm(String(nom || '') + ' ' + String(char || '')).includes('разборн');
+}
+
+function catMk() { return { qty: 0, rev: 0, cost: 0, margin: 0 }; }
+function catAddRow(agg, r) { agg.qty += r.qty; agg.rev += r.rev; agg.cost += r.totalCost; agg.margin += r.margin; }
+function catAddAgg(agg, src) { agg.qty += src.qty; agg.rev += src.rev; agg.cost += src.cost; agg.margin += src.margin; }
+
+function buildCategorySummary() {
+  const tables = catMk(), shelving = catMk(), other = catMk();
+  const chairsByModel = {};
+  (S.calcRows || []).forEach(r => {
+    const cat = catClassify(r.nom);
+    if (cat === 'tables') catAddRow(tables, r);
+    else if (cat === 'shelving') catAddRow(shelving, r);
+    else if (cat === 'chairs') {
+      if (!chairsByModel[r.nom]) chairsByModel[r.nom] = { total: catMk(), assembled: catMk(), knockdown: catMk() };
+      const m = chairsByModel[r.nom];
+      catAddRow(m.total, r);
+      if (catIsKnockdown(r.nom, r.char)) catAddRow(m.knockdown, r); else catAddRow(m.assembled, r);
+    } else {
+      catAddRow(other, r);
+    }
+  });
+  const chairsTotal = catMk();
+  Object.values(chairsByModel).forEach(m => catAddAgg(chairsTotal, m.total));
+  const grand = catMk();
+  [tables, shelving, chairsTotal, other].forEach(a => catAddAgg(grand, a));
+  return { tables, shelving, other, grand, chairs: { total: chairsTotal, models: chairsByModel } };
+}
+
+function catRowsForOutput(sum) {
+  // Общий список строк для экрана / Excel / печати, чтобы не дублировать логику.
+  const rows = [];
+  rows.push({ label: 'Итого по категориям', indent: 0, bold: true, agg: sum.grand });
+  rows.push({ label: 'Столы', indent: 0, bold: true, agg: sum.tables });
+  rows.push({ label: 'Стеллажи', indent: 0, bold: true, agg: sum.shelving });
+  rows.push({ label: 'Стулья — итого', indent: 0, bold: true, agg: sum.chairs.total });
+  Object.entries(sum.chairs.models)
+    .sort((a, b) => b[1].total.rev - a[1].total.rev)
+    .forEach(([model, m]) => {
+      rows.push({ label: model, indent: 1, bold: false, agg: m.total });
+      if (m.assembled.qty || m.assembled.rev) rows.push({ label: 'Сборный', indent: 2, bold: false, agg: m.assembled });
+      if (m.knockdown.qty || m.knockdown.rev) rows.push({ label: 'Разборный', indent: 2, bold: false, agg: m.knockdown });
+    });
+  if (sum.other.qty || sum.other.rev) rows.push({ label: 'Прочее (не отнесено к категориям)', indent: 0, bold: true, agg: sum.other });
+  return rows;
+}
+
+function renderCategorySummary() {
+  const empty = document.getElementById('cat-empty');
+  const content = document.getElementById('cat-content');
+  if (!empty || !content) return;
+  if (!S.calcRows || !S.calcRows.length) {
+    empty.style.display = '';
+    content.style.display = 'none';
+    return;
+  }
+  empty.style.display = 'none';
+  content.style.display = '';
+
+  const sum = buildCategorySummary();
+  S._catSummary = sum;
+
+  const fmt = n => Math.round(n || 0).toLocaleString('ru-RU');
+  const pct = n => (isFinite(n) ? n.toFixed(1) : '0.0') + '%';
+  const rows = catRowsForOutput(sum);
+
+  document.getElementById('cat-tbody').innerHTML = rows.map(row => {
+    const mp = row.agg.rev > 0 ? row.agg.margin / row.agg.rev * 100 : 0;
+    const trStyle = row.bold ? 'font-weight:600' : '';
+    const tdStyle = row.indent ? `padding-left:${row.indent * 20 + 8}px` : '';
+    return `<tr style="${trStyle}">
+      <td style="${tdStyle}">${catHtmlEsc(row.label)}</td>
+      <td class="r">${fmt(row.agg.qty)}</td>
+      <td class="r">${fmt(row.agg.rev)}</td>
+      <td class="r">${fmt(row.agg.cost)}</td>
+      <td class="r">${fmt(row.agg.margin)}</td>
+      <td class="r">${pct(mp)}</td>
+    </tr>`;
+  }).join('');
+}
+
+function exportCategorySummary() {
+  if (!S.calcRows || !S.calcRows.length) { alert('Сначала выполните расчёт'); return; }
+  const sum = S._catSummary || buildCategorySummary();
+  const rows = catRowsForOutput(sum);
+  const data = [['Категория / модель', 'Кол-во', 'Выручка, ₽', 'Себестоимость, ₽', 'Маржа, ₽', 'Маржа, %']];
+  rows.forEach(row => {
+    const mp = row.agg.rev > 0 ? row.agg.margin / row.agg.rev * 100 : 0;
+    data.push([
+      (row.indent ? '  '.repeat(row.indent) : '') + row.label,
+      Math.round(row.agg.qty || 0),
+      Math.round(row.agg.rev || 0),
+      Math.round(row.agg.cost || 0),
+      Math.round(row.agg.margin || 0),
+      +mp.toFixed(1)
+    ]);
+  });
+  const ws = XLSX.utils.aoa_to_sheet(data);
+  ws['!cols'] = [{ wch: 42 }, { wch: 10 }, { wch: 14 }, { wch: 16 }, { wch: 14 }, { wch: 10 }];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Категории');
+  const date = new Date().toISOString().slice(0, 10);
+  XLSX.writeFile(wb, `sebestoimost_po_kategoriyam_${date}.xlsx`);
+}
+
+function printCategorySummary() {
+  const content = document.getElementById('cat-content');
+  if (!content || content.style.display === 'none') { alert('Сначала выполните расчёт'); return; }
+
+  document.querySelectorAll('.section').forEach(s => s.classList.remove('print-target'));
+  document.getElementById('tab-categories').classList.add('print-target');
+
+  let header = content.querySelector('.print-header');
+  if (!header) { header = document.createElement('div'); header.className = 'print-header'; content.prepend(header); }
+  header.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #000;padding-bottom:.5rem;margin-bottom:1rem">
+    <div>
+      <div style="font-size:15px;font-weight:700">Себестоимость по категориям</div>
+      <div style="font-size:10px;color:#555">Дата: ${new Date().toLocaleString('ru-RU')}</div>
+    </div>
+    <div style="font-size:10px;color:#555">IRIX COST · smart apps by Irina Romanova</div>
+  </div>`;
+
+  let styleEl = document.getElementById('print-orient-style');
+  if (!styleEl) { styleEl = document.createElement('style'); styleEl.id = 'print-orient-style'; document.head.appendChild(styleEl); }
+  styleEl.textContent = '@media print { @page { size: A4 portrait; margin: 1cm 1.2cm; } }';
+
+  setTimeout(() => {
+    window.print();
+    setTimeout(() => {
+      document.querySelectorAll('.section').forEach(s => s.classList.remove('print-target'));
+      document.querySelectorAll('.print-header').forEach(h => h.remove());
+    }, 800);
+  }, 150);
 }
 
 // ── Prices Editor ────────────────────────────────────────────────────────────
