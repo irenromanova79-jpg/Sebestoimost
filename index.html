@@ -465,6 +465,15 @@ select:focus{outline:none;border-color:var(--accent)}
           <input type="file" id="f-sales" accept=".xlsx,.xls,.csv" style="display:none" onchange="loadSales(this)">
         </div>
         <div id="cache-label-sales" style="margin-top:.25rem;padding:0 .25rem"></div>
+        <div style="margin-top:.4rem;padding:0 .25rem;display:flex;gap:.4rem;align-items:center">
+          <input type="text" id="sales-month" placeholder="Месяц, напр. «Июнь 2026»"
+                 style="flex:1;min-width:0;font-size:11px;padding:.35rem .5rem;border:1px solid var(--border);border-radius:var(--r);background:var(--bg2);color:var(--text)"
+                 oninput="lsSave(LS.SALESMONTH, this.value)">
+          <button class="btn btn-sm btn-primary" style="font-size:11px;padding:.35rem .6rem;white-space:nowrap" onclick="saveCalcVersionAsMonth()">💾 Сохранить как месяц</button>
+        </div>
+        <div style="margin-top:.15rem;padding:0 .25rem;font-size:10px;color:var(--text3)">
+          Впишите месяц один раз — при повторной загрузке файла продаж за этот же месяц расчёт перезапишется под тем же названием, старые версии останутся отдельно в выпадающем списке выше («загрузить сохранённый расчёт»).
+        </div>
         <div style="text-align:right;margin-top:.25rem">
           <button class="btn btn-sm btn-ghost" style="font-size:11px;color:var(--red)" onclick="lsClear('costcalc_sales');S.sales=[];S.ready.sales=false;setUploaded('uz-sales','us-sales','—','');document.getElementById('uz-sales').classList.remove('loaded');document.getElementById('cache-label-sales').innerHTML='';checkReady()">✕ сбросить кэш</button>
         </div>
@@ -1052,7 +1061,8 @@ select:focus{outline:none;border-color:var(--accent)}
                 <th>Категория / модель</th>
                 <th class="r">Кол-во</th>
                 <th class="r">Выручка, ₽</th>
-                <th class="r">Себест., ₽</th>
+                <th class="r">Себест/ед, ₽</th>
+                <th class="r">Себест. итого, ₽</th>
                 <th class="r">Маржа, ₽</th>
                 <th class="r">Маржа, %</th>
               </tr></thead>
@@ -1213,6 +1223,7 @@ const LS = {
   USERSPECS: 'costcalc_userspecs',
   NORMVERS:  'costcalc_normversions',
   CALCVERS:  'costcalc_calcversions',
+  SALESMONTH: 'costcalc_salesmonth',
 };
 
 function lsSave(key, data) {
@@ -1437,6 +1448,11 @@ try { pbLoad(); } catch(e) { console.warn('pbLoad error:', e); S.pricebook = {};
 try { userSpecsLoad(); } catch(e) { console.warn('userSpecsLoad error:', e); S.userSpecs = {}; }
 try { normVersLoad(); refreshNormVersionUI(); } catch(e) { console.warn('normVersLoad error:', e); S.normVersions = {}; }
 try { calcVersLoad(); refreshCalcVersionUI(); } catch(e) { console.warn('calcVersLoad error:', e); S.calcVersions = {}; }
+try {
+  const savedMonth = lsLoad(LS.SALESMONTH);
+  const monthInput = document.getElementById('sales-month');
+  if (monthInput && savedMonth) monthInput.value = savedMonth;
+} catch (e) {}
 
 let specsRestored = false, pricesRestored = false, salesRestored = false;
 try { salesRestored = salesLoad(); } catch(e) { console.warn('salesLoad error:', e); S.sales = []; S.ready.sales = false; }
@@ -1592,7 +1608,12 @@ function loadSales(inp) {
     checkReady();
     // Авторасчёт если спеки и цены уже загружены из кэша
     if (S.ready.specs && S.ready.prices) {
-      setTimeout(() => runCalc(), 100);
+      setTimeout(() => {
+        runCalc();
+        const monthInput = document.getElementById('sales-month');
+        const monthName = (monthInput && monthInput.value || '').trim();
+        if (monthName) upsertCalcVersionByName(monthName);
+      }, 100);
     }
   });
 }
@@ -2059,7 +2080,8 @@ function renderCategorySummary() {
 
   const rowTds = agg => {
     const mp = agg.rev > 0 ? agg.margin / agg.rev * 100 : 0;
-    return `<td class="r">${fmt(agg.qty)}</td><td class="r">${fmt(agg.rev)}</td><td class="r">${fmt(agg.cost)}</td><td class="r">${fmt(agg.margin)}</td><td class="r">${pct(mp)}</td>`;
+    const unitCost = agg.qty > 0 ? agg.cost / agg.qty : 0;
+    return `<td class="r">${fmt(agg.qty)}</td><td class="r">${fmt(agg.rev)}</td><td class="r">${unitCost ? unitCost.toLocaleString('ru-RU', {maximumFractionDigits: 2}) : '—'}</td><td class="r">${fmt(agg.cost)}</td><td class="r">${fmt(agg.margin)}</td><td class="r">${pct(mp)}</td>`;
   };
   // Заголовок группы — кликабельный, со стрелкой; groupKey=null → просто жирная строка без сворачивания.
   const headerRow = (label, agg, groupKey, indent) => {
@@ -2097,20 +2119,22 @@ function exportCategorySummary() {
   if (!S.calcRows || !S.calcRows.length) { alert('Сначала выполните расчёт'); return; }
   const sum = S._catSummary || buildCategorySummary();
   const rows = catRowsForOutput(sum);
-  const data = [['Категория / модель', 'Кол-во', 'Выручка, ₽', 'Себестоимость, ₽', 'Маржа, ₽', 'Маржа, %']];
+  const data = [['Категория / модель', 'Кол-во', 'Выручка, ₽', 'Себест/ед, ₽', 'Себест. итого, ₽', 'Маржа, ₽', 'Маржа, %']];
   rows.forEach(row => {
     const mp = row.agg.rev > 0 ? row.agg.margin / row.agg.rev * 100 : 0;
+    const unitCost = row.agg.qty > 0 ? row.agg.cost / row.agg.qty : 0;
     data.push([
       (row.indent ? '  '.repeat(row.indent) : '') + row.label,
       Math.round(row.agg.qty || 0),
       Math.round(row.agg.rev || 0),
+      +unitCost.toFixed(2),
       Math.round(row.agg.cost || 0),
       Math.round(row.agg.margin || 0),
       +mp.toFixed(1)
     ]);
   });
   const ws = XLSX.utils.aoa_to_sheet(data);
-  ws['!cols'] = [{ wch: 42 }, { wch: 10 }, { wch: 14 }, { wch: 16 }, { wch: 14 }, { wch: 10 }];
+  ws['!cols'] = [{ wch: 42 }, { wch: 10 }, { wch: 14 }, { wch: 13 }, { wch: 16 }, { wch: 14 }, { wch: 10 }];
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Категории');
   const date = new Date().toISOString().slice(0, 10);
@@ -3816,22 +3840,11 @@ function calcVersLoad() {
 }
 function calcVersSave() { lsSave(LS.CALCVERS, S.calcVersions); }
 
-function saveCalcVersion() {
-  if (!S.calcRows || !S.calcRows.length) {
-    alert('Сначала выполните расчёт (кнопка «Рассчитать»)');
-    return;
-  }
-  const def = 'Расчёт ' + new Date().toLocaleDateString('ru-RU');
-  const name = prompt('Название версии расчёта:\n(например «Июнь 2026», «Базовый», «После роста цен»)', def);
-  if (!name || !name.trim()) return;
-
+function buildCalcVersionSnapshot(name) {
   const totCost = S.calcRows.reduce((s,r)=>s+(r.totalCost||0),0);
   const totRev  = S.calcRows.reduce((s,r)=>s+(r.rev||0),0);
-
-  const id = 'c' + Date.now();
-  if (!S.calcVersions) S.calcVersions = {};
-  S.calcVersions[id] = {
-    name: name.trim(),
+  return {
+    name,
     date: new Date().toLocaleString('ru-RU'),
     // Полный снимок входных данных — чтобы можно было редактировать
     pricebook: JSON.parse(JSON.stringify(S.pricebook || {})),
@@ -3843,9 +3856,51 @@ function saveCalcVersion() {
     // Итоги для быстрого просмотра
     summary: { totCost, totRev, totMargin: totRev-totCost, positions: S.calcRows.length }
   };
+}
+
+function saveCalcVersion() {
+  if (!S.calcRows || !S.calcRows.length) {
+    alert('Сначала выполните расчёт (кнопка «Рассчитать»)');
+    return;
+  }
+  const def = 'Расчёт ' + new Date().toLocaleDateString('ru-RU');
+  const name = prompt('Название версии расчёта:\n(например «Июнь 2026», «Базовый», «После роста цен»)', def);
+  if (!name || !name.trim()) return;
+
+  const snap = buildCalcVersionSnapshot(name.trim());
+  const id = 'c' + Date.now();
+  if (!S.calcVersions) S.calcVersions = {};
+  S.calcVersions[id] = snap;
   calcVersSave();
   refreshCalcVersionUI();
-  alert(`Версия расчёта «${name.trim()}» сохранена.\n\nСебестоимость: ${fmt(totCost)} ₽\nВыручка: ${fmt(totRev)} ₽\nМаржа: ${fmt(totRev-totCost)} ₽`);
+  alert(`Версия расчёта «${name.trim()}» сохранена.\n\nСебестоимость: ${fmt(snap.summary.totCost)} ₽\nВыручка: ${fmt(snap.summary.totRev)} ₽\nМаржа: ${fmt(snap.summary.totMargin)} ₽`);
+}
+
+// Сохраняет/перезаписывает версию расчёта под конкретным именем без запроса —
+// если версия с таким именем уже есть, она обновляется, а не дублируется.
+function upsertCalcVersionByName(name) {
+  if (!S.calcRows || !S.calcRows.length) return null;
+  if (!S.calcVersions) S.calcVersions = {};
+  let id = Object.keys(S.calcVersions).find(k => S.calcVersions[k].name === name);
+  if (!id) id = 'c' + Date.now();
+  S.calcVersions[id] = buildCalcVersionSnapshot(name);
+  calcVersSave();
+  refreshCalcVersionUI();
+  return id;
+}
+
+// Кнопка «Сохранить как месяц» на вкладке «Загрузка»: берёт название из поля
+// рядом с загрузкой продаж и сохраняет/перезаписывает расчёт под этим именем,
+// не спрашивая — так не нужно каждый раз вводить название заново.
+function saveCalcVersionAsMonth() {
+  const input = document.getElementById('sales-month');
+  const name = (input && input.value || '').trim();
+  if (!name) { alert('Впишите название месяца в поле рядом с кнопкой (например «Июнь 2026»)'); if (input) input.focus(); return; }
+  if (!S.calcRows || !S.calcRows.length) { alert('Сначала выполните расчёт (кнопка «Рассчитать» на вкладке «Расчёт»)'); return; }
+  lsSave(LS.SALESMONTH, name);
+  const existed = Object.values(S.calcVersions || {}).some(v => v.name === name);
+  upsertCalcVersionByName(name);
+  alert(`Расчёт сохранён как «${name}»${existed ? ' (перезаписан)' : ''}.\n\nТеперь его можно быстро загрузить на вкладке «Расчёт» из списка «загрузить сохранённый расчёт», не перезагружая файлы заново.`);
 }
 
 function onCalcVersionPick() {
