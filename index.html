@@ -1535,7 +1535,7 @@ function loadSales(inp) {
       const s = norm(c);
       if (s.includes('номенклат')) ci.nom = i;
       else if (s.includes('характер')) ci.char = i;
-      else if (s.includes('количест')) ci.qty = i;
+      else if (s.includes('количест') || s.includes('кол-во')) ci.qty = i;
       else if (s.includes('выручк') || s.includes('сумм')) ci.rev = i;
     });
     S.sales = [];
