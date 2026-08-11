@@ -1973,14 +1973,19 @@ function catIsKnockdown(nom, char) {
 function catMk() { return { qty: 0, rev: 0, cost: 0, margin: 0 }; }
 function catAddRow(agg, r) { agg.qty += r.qty; agg.rev += r.rev; agg.cost += r.totalCost; agg.margin += r.margin; }
 function catAddAgg(agg, src) { agg.qty += src.qty; agg.rev += src.rev; agg.cost += src.cost; agg.margin += src.margin; }
+function catAddToModel(map, model, r) {
+  if (!map[model]) map[model] = catMk();
+  catAddRow(map[model], r);
+}
 
 function buildCategorySummary() {
   const tables = catMk(), shelving = catMk(), other = catMk();
-  const chairsByModel = {};
+  const tablesByModel = {}, shelvingByModel = {};
+  const chairsByModel = {}; // model -> { total, assembled, knockdown }
   (S.calcRows || []).forEach(r => {
     const cat = catClassify(r.nom);
-    if (cat === 'tables') catAddRow(tables, r);
-    else if (cat === 'shelving') catAddRow(shelving, r);
+    if (cat === 'tables') { catAddRow(tables, r); catAddToModel(tablesByModel, r.nom, r); }
+    else if (cat === 'shelving') { catAddRow(shelving, r); catAddToModel(shelvingByModel, r.nom, r); }
     else if (cat === 'chairs') {
       if (!chairsByModel[r.nom]) chairsByModel[r.nom] = { total: catMk(), assembled: catMk(), knockdown: catMk() };
       const m = chairsByModel[r.nom];
@@ -1990,29 +1995,46 @@ function buildCategorySummary() {
       catAddRow(other, r);
     }
   });
-  const chairsTotal = catMk();
-  Object.values(chairsByModel).forEach(m => catAddAgg(chairsTotal, m.total));
+  const chairsTotal = catMk(), chairsAssembled = catMk(), chairsKnockdown = catMk();
+  const assembledModels = {}, knockdownModels = {};
+  Object.entries(chairsByModel).forEach(([model, m]) => {
+    catAddAgg(chairsTotal, m.total);
+    if (m.assembled.qty || m.assembled.rev) { catAddAgg(chairsAssembled, m.assembled); assembledModels[model] = m.assembled; }
+    if (m.knockdown.qty || m.knockdown.rev) { catAddAgg(chairsKnockdown, m.knockdown); knockdownModels[model] = m.knockdown; }
+  });
   const grand = catMk();
   [tables, shelving, chairsTotal, other].forEach(a => catAddAgg(grand, a));
-  return { tables, shelving, other, grand, chairs: { total: chairsTotal, models: chairsByModel } };
+  return {
+    grand, tables, shelving, other, tablesByModel, shelvingByModel,
+    chairs: { total: chairsTotal, assembled: chairsAssembled, knockdown: chairsKnockdown, assembledModels, knockdownModels }
+  };
 }
 
+// Плоский список строк с полной детализацией (все группы «развёрнуты») —
+// используется для Excel и печати, где сворачивание на экране не при делах.
 function catRowsForOutput(sum) {
-  // Общий список строк для экрана / Excel / печати, чтобы не дублировать логику.
   const rows = [];
+  const byRev = obj => Object.entries(obj).sort((a, b) => b[1].rev - a[1].rev);
   rows.push({ label: 'Итого по категориям', indent: 0, bold: true, agg: sum.grand });
   rows.push({ label: 'Столы', indent: 0, bold: true, agg: sum.tables });
+  byRev(sum.tablesByModel).forEach(([model, agg]) => rows.push({ label: model, indent: 1, bold: false, agg }));
   rows.push({ label: 'Стеллажи', indent: 0, bold: true, agg: sum.shelving });
+  byRev(sum.shelvingByModel).forEach(([model, agg]) => rows.push({ label: model, indent: 1, bold: false, agg }));
   rows.push({ label: 'Стулья — итого', indent: 0, bold: true, agg: sum.chairs.total });
-  Object.entries(sum.chairs.models)
-    .sort((a, b) => b[1].total.rev - a[1].total.rev)
-    .forEach(([model, m]) => {
-      rows.push({ label: model, indent: 1, bold: false, agg: m.total });
-      if (m.assembled.qty || m.assembled.rev) rows.push({ label: 'Сборный', indent: 2, bold: false, agg: m.assembled });
-      if (m.knockdown.qty || m.knockdown.rev) rows.push({ label: 'Разборный', indent: 2, bold: false, agg: m.knockdown });
-    });
+  rows.push({ label: 'Сборные', indent: 1, bold: true, agg: sum.chairs.assembled });
+  byRev(sum.chairs.assembledModels).forEach(([model, agg]) => rows.push({ label: model, indent: 2, bold: false, agg }));
+  rows.push({ label: 'Разборные', indent: 1, bold: true, agg: sum.chairs.knockdown });
+  byRev(sum.chairs.knockdownModels).forEach(([model, agg]) => rows.push({ label: model, indent: 2, bold: false, agg }));
   if (sum.other.qty || sum.other.rev) rows.push({ label: 'Прочее (не отнесено к категориям)', indent: 0, bold: true, agg: sum.other });
   return rows;
+}
+
+// Состояние «свёрнуто/развёрнуто» по группам, переживает перерисовку.
+if (!S.catUI) S.catUI = { tables: false, shelving: false, chairsAssembled: false, chairsKnockdown: false };
+
+function toggleCatGroup(key) {
+  S.catUI[key] = !S.catUI[key];
+  renderCategorySummary();
 }
 
 function renderCategorySummary() {
@@ -2029,24 +2051,46 @@ function renderCategorySummary() {
 
   const sum = buildCategorySummary();
   S._catSummary = sum;
+  if (!S.catUI) S.catUI = { tables: false, shelving: false, chairsAssembled: false, chairsKnockdown: false };
 
   const fmt = n => Math.round(n || 0).toLocaleString('ru-RU');
   const pct = n => (isFinite(n) ? n.toFixed(1) : '0.0') + '%';
-  const rows = catRowsForOutput(sum);
+  const byRev = obj => Object.entries(obj).sort((a, b) => b[1].rev - a[1].rev);
 
-  document.getElementById('cat-tbody').innerHTML = rows.map(row => {
-    const mp = row.agg.rev > 0 ? row.agg.margin / row.agg.rev * 100 : 0;
-    const trStyle = row.bold ? 'font-weight:600' : '';
-    const tdStyle = row.indent ? `padding-left:${row.indent * 20 + 8}px` : '';
-    return `<tr style="${trStyle}">
-      <td style="${tdStyle}">${catHtmlEsc(row.label)}</td>
-      <td class="r">${fmt(row.agg.qty)}</td>
-      <td class="r">${fmt(row.agg.rev)}</td>
-      <td class="r">${fmt(row.agg.cost)}</td>
-      <td class="r">${fmt(row.agg.margin)}</td>
-      <td class="r">${pct(mp)}</td>
-    </tr>`;
-  }).join('');
+  const rowTds = agg => {
+    const mp = agg.rev > 0 ? agg.margin / agg.rev * 100 : 0;
+    return `<td class="r">${fmt(agg.qty)}</td><td class="r">${fmt(agg.rev)}</td><td class="r">${fmt(agg.cost)}</td><td class="r">${fmt(agg.margin)}</td><td class="r">${pct(mp)}</td>`;
+  };
+  // Заголовок группы — кликабельный, со стрелкой; groupKey=null → просто жирная строка без сворачивания.
+  const headerRow = (label, agg, groupKey, indent) => {
+    const expanded = groupKey ? !!S.catUI[groupKey] : true;
+    const arrow = groupKey
+      ? `<span style="display:inline-block;width:14px;color:var(--text3);font-size:10px">${expanded ? '▼' : '▶'}</span>`
+      : `<span style="display:inline-block;width:14px"></span>`;
+    const attrs = groupKey ? ` style="font-weight:600;cursor:pointer" onclick="toggleCatGroup('${groupKey}')"` : ` style="font-weight:600"`;
+    return `<tr${attrs}><td style="padding-left:${8 + indent * 20}px">${arrow}${catHtmlEsc(label)}</td>${rowTds(agg)}</tr>`;
+  };
+  const modelRow = (label, agg, indent) =>
+    `<tr><td style="padding-left:${8 + indent * 20 + 14}px">${catHtmlEsc(label)}</td>${rowTds(agg)}</tr>`;
+
+  let html = '';
+  html += headerRow('Итого по категориям', sum.grand, null, 0);
+
+  html += headerRow('Столы', sum.tables, 'tables', 0);
+  if (S.catUI.tables) byRev(sum.tablesByModel).forEach(([model, agg]) => { html += modelRow(model, agg, 1); });
+
+  html += headerRow('Стеллажи', sum.shelving, 'shelving', 0);
+  if (S.catUI.shelving) byRev(sum.shelvingByModel).forEach(([model, agg]) => { html += modelRow(model, agg, 1); });
+
+  html += headerRow('Стулья — итого', sum.chairs.total, null, 0);
+  html += headerRow('Сборные', sum.chairs.assembled, 'chairsAssembled', 1);
+  if (S.catUI.chairsAssembled) byRev(sum.chairs.assembledModels).forEach(([model, agg]) => { html += modelRow(model, agg, 2); });
+  html += headerRow('Разборные', sum.chairs.knockdown, 'chairsKnockdown', 1);
+  if (S.catUI.chairsKnockdown) byRev(sum.chairs.knockdownModels).forEach(([model, agg]) => { html += modelRow(model, agg, 2); });
+
+  if (sum.other.qty || sum.other.rev) html += headerRow('Прочее (не отнесено к категориям)', sum.other, null, 0);
+
+  document.getElementById('cat-tbody').innerHTML = html;
 }
 
 function exportCategorySummary() {
@@ -2077,6 +2121,11 @@ function printCategorySummary() {
   const content = document.getElementById('cat-content');
   if (!content || content.style.display === 'none') { alert('Сначала выполните расчёт'); return; }
 
+  // На печати показываем всё развёрнутым, вне зависимости от того, что свёрнуто на экране.
+  const prevUI = Object.assign({}, S.catUI);
+  S.catUI = { tables: true, shelving: true, chairsAssembled: true, chairsKnockdown: true };
+  renderCategorySummary();
+
   document.querySelectorAll('.section').forEach(s => s.classList.remove('print-target'));
   document.getElementById('tab-categories').classList.add('print-target');
 
@@ -2099,6 +2148,8 @@ function printCategorySummary() {
     setTimeout(() => {
       document.querySelectorAll('.section').forEach(s => s.classList.remove('print-target'));
       document.querySelectorAll('.print-header').forEach(h => h.remove());
+      S.catUI = prevUI;
+      renderCategorySummary();
     }, 800);
   }, 150);
 }
