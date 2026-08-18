@@ -172,6 +172,12 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:14
 .metric-sub{font-size:11px;color:var(--text3);margin-top:.125rem;font-family:var(--mono)}
 /* Table */
 .table-wrap{background:var(--bg2);border:1px solid var(--border);border-radius:var(--r2);overflow:hidden}
+.cmp-table-wrap{overflow:auto;max-height:min(70vh,640px)}
+.cmp-table-wrap table{width:max-content;min-width:100%}
+.cmp-table-wrap thead th{position:sticky;top:0;z-index:2;background:var(--bg3)}
+.cmp-table-wrap td:first-child,.cmp-table-wrap th:first-child{position:sticky;left:0;z-index:1;background:var(--bg2)}
+.cmp-table-wrap thead th:first-child{z-index:3;background:var(--bg3)}
+.cmp-table-wrap tr:hover td:first-child{background:var(--row-hover)}
 table{width:100%;border-collapse:collapse;font-size:13px}
 th{text-align:left;padding:.625rem 1rem;border-bottom:1px solid var(--border);color:var(--text2);font-size:11px;font-weight:500;text-transform:uppercase;letter-spacing:.05em;background:var(--bg3);white-space:nowrap}
 th.r{text-align:right}
@@ -1188,10 +1194,10 @@ select:focus{outline:none;border-color:var(--accent)}
             <span class="toolbar-spacer"></span>
             <div style="font-size:11px;color:var(--text3)" id="cmp-count"></div>
           </div>
-          <div class="table-wrap">
+          <div class="table-wrap cmp-table-wrap">
             <table style="font-size:12px">
               <thead><tr>
-                <th>Позиция</th>
+                <th style="min-width:220px">Позиция</th>
                 <th class="r">Кол-во<br><span class="cmp-th-a" style="font-size:9px;color:var(--text3);font-weight:400"></span></th>
                 <th class="r">Кол-во<br><span class="cmp-th-b" style="font-size:9px;color:var(--text3);font-weight:400"></span></th>
                 <th class="r">Δ шт</th>
@@ -6556,9 +6562,11 @@ function renderCompare() {
     const arrow = hasKids
       ? `<span style="display:inline-block;width:14px;color:var(--text3)">${open ? '▾' : '▸'}</span>`
       : `<span style="display:inline-block;width:14px"></span>`;
+    /* название в одну строку с многоточием, полный текст — во всплывающей подсказке */
+    const labelSpan = `<span style="display:inline-block;max-width:${child ? '230' : '260'}px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:middle">${moEsc(i.label)}</span>`;
     const nameTd = hasKids
-      ? `<td style="max-width:280px;cursor:pointer" onclick="cmpToggleCat(this)" data-key="${moEsc(i.key)}">${arrow}${moEsc(i.label)}${tag(i)}</td>`
-      : `<td style="max-width:280px;${child ? 'padding-left:2rem;color:var(--text2);font-size:12.5px' : ''}">${arrow}${moEsc(i.label)}${tag(i)}</td>`;
+      ? `<td style="white-space:nowrap;cursor:pointer" onclick="cmpToggleCat(this)" data-key="${moEsc(i.key)}" title="${moEsc(i.label)}">${arrow}${labelSpan}${tag(i)}</td>`
+      : `<td style="white-space:nowrap;${child ? 'padding-left:2rem;color:var(--text2);font-size:12.5px' : ''}" title="${moEsc(i.label)}">${arrow}${labelSpan}${tag(i)}</td>`;
     return `<tr${child ? ' style="background:rgba(255,255,255,.025)"' : ''}${!child && hasKids ? ' style="font-weight:600"' : ''}>
       ${nameTd}
       <td class="r">${cmpNum(i.qa, 0)}</td><td class="r">${cmpNum(i.qb, 0)}</td>
