@@ -337,7 +337,7 @@ select:focus{outline:none;border-color:var(--accent)}
   <!-- Topbar -->
   <header class="topbar">
     <div class="logo"><svg class="logo-mark" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" aria-label="IRIX"><polygon points="4,4 4,96 50,50" fill="var(--logo-1)"/><polygon points="50,50 96,4 40,4" fill="var(--logo-1)"/><polygon points="4,96 50,50 96,96" fill="var(--logo-2)"/></svg><div class="logo-text"><div class="logo-name">IRIX <b>COST</b></div><div class="logo-sub">SMART APPS BY IRINA ROMANOVA</div></div></div>
-    <div style="margin-left:.75rem;line-height:1.35"><div style="font-size:12px;color:var(--text2);font-family:var(--mono)">Себестоимость и калькуляция <span style="color:var(--accent)">v5.7</span> <span style="color:var(--text3);font-size:10px">themes-2026-08-11</span></div><div style="font-size:10px;color:var(--text3)">умные приложения для бизнеса</div></div>
+    <div style="margin-left:.75rem;line-height:1.35"><div style="font-size:12px;color:var(--text2);font-family:var(--mono)">Себестоимость и калькуляция <span style="color:var(--accent)">v5.9</span> <span style="color:var(--text3);font-size:10px">compare-2026-08-18b</span></div><div style="font-size:10px;color:var(--text3)">умные приложения для бизнеса</div></div>
     <div class="topbar-right">
       <span id="top-status" style="font-size:11px;color:var(--text3);font-family:var(--mono)"></span>
       <button class="btn btn-sm" onclick="runCalc()" id="btn-recalc" style="display:none">↺ Обновить расчёт</button>
@@ -386,6 +386,13 @@ select:focus{outline:none;border-color:var(--accent)}
     </div>
     <div class="nav-item" data-tab="categories">
       <span class="nav-icon">▤</span> Категории
+    </div>
+    <div class="nav-item" data-tab="months">
+      <span class="nav-icon">📆</span> По месяцам
+      <span id="badge-months" class="badge badge-blue" style="margin-left:auto;display:none">0</span>
+    </div>
+    <div class="nav-item" data-tab="compare">
+      <span class="nav-icon">⇄</span> Сравнение месяцев
     </div>
     <div class="nav-sep"></div>
     <div class="nav-label">Экспорт</div>
@@ -515,6 +522,32 @@ select:focus{outline:none;border-color:var(--accent)}
         <input type="file" id="f-stock" accept=".xlsx,.xls,.csv" style="display:none" onchange="loadStock(this)">
       </div>
       <div class="metrics" id="upload-metrics" style="display:none"></div>
+
+      <div class="card" id="mo-card" style="margin-top:1rem">
+        <div class="card-title">Расчёт по месяцам</div>
+        <div class="alert alert-blue">
+          <span>ℹ</span>
+          <div>Загрузите файлы продаж за несколько месяцев — по файлу на месяц, можно выбрать сразу все.
+          Название месяца берётся из имени файла и его можно поправить прямо в таблице; повторная загрузка
+          того же месяца перезаписывает его, а не плодит дубли. Можно и одним файлом: если в отчёте 1С
+          есть группировка по месяцу — колонкой «Период»/«Месяц»/«Дата» или строками «июнь 2026», как в
+          отчёте «Продажи» — он сам разрежется на месяцы, а итоги каждого месяца сверятся с итогом 1С.
+          Группировку в отчёте нужно развернуть до номенклатуры («Разворачивать до»), иначе в файле будут
+          только итоги.
+          <strong>Себестоимость по всем месяцам считается по текущим ценам и спецификациям</strong> —
+          сравнивается объём и структура продаж, а не изменение закупочных цен.</div>
+        </div>
+        <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;margin-bottom:.6rem">
+          <button class="btn btn-sm btn-primary" onclick="document.getElementById('f-months').click()">⬆ Добавить файлы продаж</button>
+          <input type="file" id="f-months" accept=".xlsx,.xls,.csv" multiple style="display:none" onchange="moAddFiles(this)">
+          <button class="btn btn-sm" onclick="moAddCurrent()">＋ Текущие продажи как месяц</button>
+          <span class="toolbar-spacer"></span>
+          <button class="btn btn-sm" onclick="switchTab('months')">📆 Открыть сводку по месяцам</button>
+          <button class="btn btn-sm btn-ghost" style="color:var(--red)" onclick="moClearAll()">✕ Очистить</button>
+        </div>
+        <div id="mo-status" style="font-size:11px;color:var(--text2);margin-bottom:.4rem"></div>
+        <div id="mo-list"></div>
+      </div>
     </div>
 
     <!-- PRICES EDITOR -->
@@ -1073,6 +1106,123 @@ select:focus{outline:none;border-color:var(--accent)}
       </div>
     </div>
 
+    <!-- MONTHS -->
+    <div id="tab-months" class="section">
+      <div id="mo-empty" class="empty"><span class="empty-icon">📆</span>Добавьте файлы продаж за месяцы на вкладке «Загрузка»</div>
+      <div id="mo-content" style="display:none">
+        <div class="card">
+          <div style="display:flex;align-items:center;gap:.75rem;flex-wrap:wrap">
+            <div class="card-title" style="margin:0">Себестоимость и маржа по месяцам</div>
+            <div style="font-size:11px;color:var(--text3)" id="mo-note"></div>
+            <span class="toolbar-spacer"></span>
+            <button class="btn btn-sm" onclick="moRefresh()">↻ Пересчитать</button>
+            <button class="btn btn-sm" onclick="exportMonths()">↓ Excel</button>
+          </div>
+          <div class="metrics" id="mo-metrics" style="margin-top:.75rem"></div>
+        </div>
+        <div class="card">
+          <div class="table-wrap" style="border:none">
+            <table id="mo-table">
+              <thead><tr>
+                <th>Месяц</th>
+                <th class="r">Позиций</th>
+                <th class="r">Кол-во</th>
+                <th class="r">Выручка, ₽</th>
+                <th class="r">Себестоимость, ₽</th>
+                <th class="r">Маржа, ₽</th>
+                <th class="r">Маржа, %</th>
+                <th class="r">Δ выручки</th>
+                <th class="r">Δ маржи</th>
+                <th>Качество данных</th>
+              </tr></thead>
+              <tbody id="mo-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- COMPARE -->
+    <div id="tab-compare" class="section">
+      <div id="cmp-empty" class="empty"><span class="empty-icon">⇄</span>Нужно минимум два месяца</div>
+      <div id="cmp-content" style="display:none">
+        <div class="card">
+          <div class="toolbar" style="margin-bottom:.5rem">
+            <span style="font-size:12px;color:var(--text2)">Сравнить</span>
+            <select id="cmp-a" onchange="cmpSet('a', this.value)"></select>
+            <button class="btn btn-sm btn-ghost" style="padding:.25rem .5rem" onclick="cmpSwap()" title="Поменять месяцы местами">⇄</button>
+            <select id="cmp-b" onchange="cmpSet('b', this.value)"></select>
+            <span style="font-size:12px;color:var(--text2);margin-left:.5rem">Группировка</span>
+            <select id="cmp-mode" onchange="cmpSet('mode', this.value)">
+              <option value="nom">по номенклатуре</option>
+              <option value="nomchar">номенклатура + характеристика</option>
+              <option value="cat">по категориям</option>
+            </select>
+            <span class="toolbar-spacer"></span>
+            <button class="btn btn-sm" onclick="exportCompare()">↓ Excel</button>
+          </div>
+          <div class="metrics" id="cmp-metrics"></div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">За счёт чего изменились выручка и прибыль</div>
+          <div style="font-size:11px;color:var(--text3);margin-bottom:.5rem">
+            «Объём» — продали больше или меньше штук при неизменном ассортименте. «Структура» — сдвиг продаж
+            между позициями с разной ценой и маржинальностью. «Цена» и «Себестоимость» — по сопоставимым
+            позициям, которые продавались в обоих месяцах. Сумма факторов равна изменению итога.
+          </div>
+          <div class="table-wrap" style="border:none;max-height:none" id="cmp-factors"></div>
+        </div>
+
+        <div class="card">
+          <div class="toolbar">
+            <div class="card-title" style="margin:0">По номенклатуре</div>
+            <input type="search" class="inp" style="width:240px" placeholder="Поиск позиции..." id="cmp-q"
+                   oninput="cmpSet('q', this.value)">
+            <select id="cmp-sort" onchange="cmpSet('sort', this.value)">
+              <option value="profit">по вкладу в прибыль</option>
+              <option value="share">по изменению доли</option>
+              <option value="revB">по выручке второго месяца</option>
+              <option value="name">по названию</option>
+            </select>
+            <span class="toolbar-spacer"></span>
+            <div style="font-size:11px;color:var(--text3)" id="cmp-count"></div>
+          </div>
+          <div class="table-wrap">
+            <table style="font-size:12px">
+              <thead><tr>
+                <th>Позиция</th>
+                <th class="r">Кол-во<br><span class="cmp-th-a" style="font-size:9px;color:var(--text3);font-weight:400"></span></th>
+                <th class="r">Кол-во<br><span class="cmp-th-b" style="font-size:9px;color:var(--text3);font-weight:400"></span></th>
+                <th class="r">Δ шт</th>
+                <th class="r">Выручка<br><span class="cmp-th-a" style="font-size:9px;color:var(--text3);font-weight:400"></span></th>
+                <th class="r">Выручка<br><span class="cmp-th-b" style="font-size:9px;color:var(--text3);font-weight:400"></span></th>
+                <th class="r">Δ выручки</th>
+                <th class="r">Доля<br><span class="cmp-th-a" style="font-size:9px;color:var(--text3);font-weight:400"></span></th>
+                <th class="r">Доля<br><span class="cmp-th-b" style="font-size:9px;color:var(--text3);font-weight:400"></span></th>
+                <th class="r">Δ доли</th>
+                <th class="r">Ср. чек<br><span class="cmp-th-a" style="font-size:9px;color:var(--text3);font-weight:400"></span></th>
+                <th class="r">Ср. чек<br><span class="cmp-th-b" style="font-size:9px;color:var(--text3);font-weight:400"></span></th>
+                <th class="r">Себест/ед<br><span class="cmp-th-a" style="font-size:9px;color:var(--text3);font-weight:400"></span></th>
+                <th class="r">Себест/ед<br><span class="cmp-th-b" style="font-size:9px;color:var(--text3);font-weight:400"></span></th>
+                <th class="r">Рентаб.<br><span class="cmp-th-a" style="font-size:9px;color:var(--text3);font-weight:400"></span></th>
+                <th class="r">Рентаб.<br><span class="cmp-th-b" style="font-size:9px;color:var(--text3);font-weight:400"></span></th>
+                <th class="r">Δ рентаб.</th>
+                <th class="r">Прибыль<br><span class="cmp-th-a" style="font-size:9px;color:var(--text3);font-weight:400"></span></th>
+                <th class="r">Прибыль<br><span class="cmp-th-b" style="font-size:9px;color:var(--text3);font-weight:400"></span></th>
+                <th class="r">Δ прибыли</th>
+              </tr></thead>
+              <tbody id="cmp-tbody"></tbody>
+            </table>
+          </div>
+          <div style="font-size:11px;color:var(--text3);margin-top:.5rem">
+            Средний чек = выручка / количество: в выгрузке продаж нет числа документов, поэтому это средняя
+            цена реализации за единицу. Себестоимость обоих месяцев — по текущим ценам и спецификациям.
+          </div>
+        </div>
+      </div>
+    </div>
+
   </main>
 
 </div>
@@ -1224,6 +1374,7 @@ const LS = {
   NORMVERS:  'costcalc_normversions',
   CALCVERS:  'costcalc_calcversions',
   SALESMONTH: 'costcalc_salesmonth',
+  PERIODS:   'costcalc_periods',
 };
 
 function lsSave(key, data) {
@@ -1532,6 +1683,8 @@ document.querySelectorAll('.nav-item[data-tab]').forEach(el => {
 function switchTab(name) {
   document.querySelectorAll('.nav-item[data-tab]').forEach(e => e.classList.toggle('active', e.dataset.tab === name));
   document.querySelectorAll('.section').forEach(s => s.classList.toggle('active', s.id === 'tab-' + name));
+  if (name === 'months') { try { renderMonths(); } catch(e) { console.warn('renderMonths:', e); } }
+  if (name === 'compare') { try { renderCompare(); } catch(e) { console.warn('renderCompare:', e); } }
 }
 
 // ── File reading ────────────────────────────────────────────────────────────
@@ -1576,34 +1729,98 @@ function norm(s) {
 }
 
 // ── Load Sales ──────────────────────────────────────────────────────────────
+// Разбор файла продаж. Вынесен отдельно: тем же разбором пользуется
+// загрузка месяцев (несколько файлов сразу). Колонка периода/месяца/даты
+// подхватывается, если она есть — по ней файл можно разрезать на месяцы.
+// Число из ячейки 1С: «22 264 467,08», неразрывные пробелы, знак валюты.
+function numOf(v) {
+  if (typeof v === 'number') return v;
+  const s = String(v == null ? '' : v).replace(/[\s\u00a0]/g, '').replace(/,/g, '.').replace(/[^0-9.\-]/g, '');
+  const n = parseFloat(s);
+  return isNaN(n) ? 0 : n;
+}
+
+// Строка-группировка по месяцу в отчёте 1С: «июнь 2026», «Июль 2026 г.».
+// Год обязателен — иначе номенклатура вроде «Августина» уехала бы в месяцы.
+function moMonthCell(v) {
+  const s = String(v == null ? '' : v).trim().toLowerCase().replace(/ё/g, 'е');
+  const m = s.match(/^(янв|февр|март|апрел|ма[йя]|июн|июл|авг|сент|октяб|нояб|декаб)[а-я]*\.?\s+(20\d{2})\s*(г\.?|год)?$/);
+  if (!m) return null;
+  for (let i = 0; i < 12; i++) if (new RegExp('^' + MO_STEMS[i]).test(m[1])) return MO_MONTHS[i] + ' ' + m[2];
+  return null;
+}
+
+function parseSalesFile(rows) {
+  const hdr = findHeader(rows);
+  // Шапка в выгрузках 1С бывает двухэтажной: «Месяц» стоит строкой выше, а
+  // «Количество» и «Выручка» объединены по вертикали — их значение лежит в
+  // верхней строке, а в строке с «Номенклатурой» пусто. Поэтому колонку
+  // опознаём по склейке двух строк шапки.
+  const width = Math.max((rows[hdr] || []).length, (rows[hdr - 1] || []).length);
+  const ci = { nom: -1, char: -1, qty: -1, rev: -1, per: -1 };
+  for (let i = 0; i < width; i++) {
+    const s = norm((rows[hdr - 1] || [])[i]) + ' ' + norm((rows[hdr] || [])[i]);
+    if (s.includes('номенклат')) ci.nom = i;
+    else if (s.includes('характер')) ci.char = i;
+    else if (s.includes('количест') || s.includes('кол-во')) ci.qty = i;
+    else if (s.includes('выручк') || s.includes('сумм')) ci.rev = i;
+    else if (s.includes('период') || s.includes('месяц') || s.includes('дата')) ci.per = i;
+  }
+  if (ci.nom < 0) ci.nom = 0;
+
+  const out = [];
+  const groupTotals = {};   // месяц → итог из строки-группировки 1С (для сверки)
+  let cur = '', monthRows = 0;
+  for (let i = hdr + 1; i < rows.length; i++) {
+    const r = rows[i];
+    if (!r) continue;
+    const nomStr = String(r[ci.nom] || '').trim();
+    if (!nomStr) continue;
+    // Пропускаем строки-итоги: "Итого", "Всего", "Итого по...", пустые номенклатуры
+    if (/^итого/i.test(nomStr) || /^всего/i.test(nomStr) || /^total/i.test(nomStr)) continue;
+    // Строка-группировка «июнь 2026»: запоминаем месяц и её итог, в позиции не берём
+    const lbl = moMonthCell(nomStr);
+    if (lbl) {
+      cur = lbl; monthRows++;
+      const g = groupTotals[lbl] || (groupTotals[lbl] = { qty: 0, rev: 0 });
+      g.qty += numOf(r[ci.qty]); g.rev += numOf(r[ci.rev]);
+      continue;
+    }
+    const rec = {
+      nom: nomStr,
+      char: String(r[ci.char] || '').trim().replace(/^nan$/i, ''),
+      qty: numOf(r[ci.qty]),
+      rev: numOf(r[ci.rev])
+    };
+    const per = ci.per >= 0 ? moPeriodLabel(r[ci.per]) : cur;
+    if (per) rec.per = per;
+    out.push(rec);
+  }
+  return {
+    sales: out,
+    hasPeriod: ci.per >= 0 || monthRows > 0,
+    monthRows,
+    groupTotals,
+    // выгрузка со свёрнутыми группировками: есть месяцы, но нет ни одной позиции
+    collapsed: monthRows > 0 && !out.length,
+    header: hdr
+  };
+}
+
 function loadSales(inp) {
   if (!inp.files[0]) return;
   readXlsx(inp.files[0], rows => {
-    const hdr = findHeader(rows);
-    const ci = { nom: -1, char: -1, qty: -1, rev: -1 };
-    (rows[hdr] || []).forEach((c, i) => {
-      const s = norm(c);
-      if (s.includes('номенклат')) ci.nom = i;
-      else if (s.includes('характер')) ci.char = i;
-      else if (s.includes('количест') || s.includes('кол-во')) ci.qty = i;
-      else if (s.includes('выручк') || s.includes('сумм')) ci.rev = i;
-    });
-    S.sales = [];
-    for (let i = hdr + 1; i < rows.length; i++) {
-      const r = rows[i];
-      if (!r || !r[ci.nom]) continue;
-      const nomStr = String(r[ci.nom] || '').trim();
-      // Пропускаем строки-итоги: "Итого", "Всего", "Итого по...", пустые номенклатуры
-      if (!nomStr || /^итого/i.test(nomStr) || /^всего/i.test(nomStr) || /^total/i.test(nomStr)) continue;
-      S.sales.push({
-        nom: nomStr,
-        char: String(r[ci.char] || '').trim().replace(/^nan$/i, ''),
-        qty: +String(r[ci.qty] || '0').replace(',', '.') || 0,
-        rev: +String(r[ci.rev] || '0').replace(',', '.') || 0
-      });
-    }
+    const parsed = parseSalesFile(rows);
+    S.sales = parsed.sales;
     S.ready.sales = true;
-    setUploaded('uz-sales', 'us-sales', inp.files[0].name, S.sales.length + ' позиций');
+    const months = [...new Set(S.sales.map(s => s.per).filter(Boolean))];
+    setUploaded('uz-sales', 'us-sales', inp.files[0].name, S.sales.length + ' позиций' +
+      (months.length > 1 ? ' · ' + months.length + ' мес. в одном файле' : ''));
+    if (months.length > 1) {
+      const st = document.getElementById('mo-status');
+      if (st) st.innerHTML = '<span style="color:var(--amber)">В этом файле ' + months.length +
+        ' месяца(ев) — расчёт выше считает их вместе. Чтобы получить разбивку, загрузите тот же файл кнопкой «Добавить файлы продаж».</span>';
+    }
     salesSave(inp.files[0].name);
     checkReady();
     // Авторасчёт если спеки и цены уже загружены из кэша
@@ -1939,14 +2156,16 @@ function calcCost(nom, char, visited, depth) {
 }
 
 // ── Run Calc ─────────────────────────────────────────────────────────────────
-function runCalc(stayOnTab) {
-  if (!S.sales.length) { alert('Загрузите файл продаж'); return; }
-  S.calcRows = S.sales.map(s => {
+// Расчёт строк по произвольному списку продаж — используется и обычным
+// расчётом, и расчётом по месяцам. light=true не собирает дерево состава
+// (оно нужно только для детализации текущего расчёта).
+function calcRowsForSales(sales, light) {
+  return (sales || []).map(s => {
     const key = findSpec(s.nom, s.char);
     let cost = 0, full = false, missing = [], tree = [];
     if (key) {
       const r = calcCost(s.nom, s.char, new Set(), 0);
-      cost = r.cost; full = r.full; missing = r.missing; tree = r.tree;
+      cost = r.cost; full = r.full; missing = r.missing; if (!light) tree = r.tree;
     } else {
       missing = ['нет спецификации'];
     }
@@ -1955,6 +2174,11 @@ function runCalc(stayOnTab) {
     const mp = s.rev > 0 ? margin / s.rev * 100 : 0;
     return { ...s, hasSpec: !!key, cost, totalCost, margin, mp, full, missing, tree };
   });
+}
+
+function runCalc(stayOnTab) {
+  if (!S.sales.length) { alert('Загрузите файл продаж'); return; }
+  S.calcRows = calcRowsForSales(S.sales);
   renderCalcTable();
   renderDrillSelect();
   renderReport();
@@ -1965,6 +2189,7 @@ function runCalc(stayOnTab) {
   try { if (C.rows && C.rows.length) renderChannels(); } catch(e) {}
   try { if (V.rows && V.rows.length) renderVypusk(); } catch(e) {}
   try { renderCategorySummary(); } catch(e) {}
+  try { if (typeof MO !== 'undefined' && MO.periods.length) { moRecalc(); renderMonths(); renderCompare(); } } catch(e) {}
   // After calc: show Refresh, hide Calculate
   document.getElementById('btn-calc').style.display = 'none';
   document.getElementById('btn-recalc').style.display = 'inline-flex';
@@ -4990,6 +5215,7 @@ function backupAll() {
     // цены закупок тоже сохраняем — вдруг понадобятся
     purchasePrices: S.purchasePrices || {},
     mpCalc: (typeof MPC !== 'undefined' && MPC) ? MPC : null,
+    periods: (typeof MO !== 'undefined' && MO.periods) ? MO.periods : [],
   };
   const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
@@ -5525,7 +5751,7 @@ function sySnapshot() {
     v: 1,
     at: new Date().toISOString(),
     by: SY.me || 'без имени',
-    app: 'IRIX COST v5.7',
+    app: 'IRIX COST v5.9',
     sales: S.sales || [],
     purchasePrices: S.purchasePrices || {},
     pricesByChar: S.pricesByChar || {},
@@ -5537,7 +5763,8 @@ function sySnapshot() {
     pricebook: S.pricebook || {},
     userSpecs: S.userSpecs || {},
     channels: { rows: C.rows || [], fname: C.fname || '', info: C.info || '', groups: C.groups || [] },
-    vypusk: { rows: V.rows || [], fname: V.fname || '' }
+    vypusk: { rows: V.rows || [], fname: V.fname || '' },
+    periods: (typeof MO !== 'undefined' && MO.periods) ? MO.periods : []
   };
 }
 
@@ -5584,6 +5811,11 @@ function syApply(d) {
     C.info = d.channels.info || ''; C.groups = d.channels.groups || [];
   }
   if (d.vypusk) { V.rows = d.vypusk.rows || []; V.fname = d.vypusk.fname || ''; }
+  // месяцы: свои остаются, месяцы с сервиса добавляются/перезаписываются по названию
+  if (d.periods && d.periods.length && typeof MO !== 'undefined') {
+    d.periods.forEach(p => { if (p && p.name) moUpsert(p.name, p.sales || [], p.fname || ''); });
+    moSave(); try { moRenderList(); moBadge(); } catch (e) {}
+  }
 
   SY.at = d.at; SY.by = d.by; syCfgSave();
   try { checkReady(); } catch (e) {}
@@ -5696,7 +5928,698 @@ async function syBoot() {
 }
 setTimeout(() => { try { syBoot(); } catch (e) { console.warn('syBoot:', e); } }, 500);
 
-console.log('%c\u2713 IRIX COST v5.7 (themes-2026-08-11) \u2014 \u0444\u0430\u0439\u043b \u0437\u0430\u0433\u0440\u0443\u0436\u0435\u043d \u043f\u043e\u043b\u043d\u043e\u0441\u0442\u044c\u044e', 'color:#00E38A;font-weight:bold;font-size:14px');
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   МЕСЯЦЫ (периоды) — несколько файлов продаж, расчёт по каждому месяцу
+   Себестоимость считается по ТЕКУЩИМ ценам и спецификациям для всех месяцев:
+   меняется только состав и объём продаж. Это осознанное упрощение — если
+   цены месяца отличаются, для него надо сохранять отдельную версию расчёта.
+   ═══════════════════════════════════════════════════════════════════════════ */
+const MO_MONTHS = ['Январь','Февраль','Март','Апрель','Май','Июнь','Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'];
+const MO_STEMS  = ['янв','февр','март','апрел','ма[йя]','июн','июл','авг','сент','октяб','нояб','декаб'];
+const MO = { periods: [], calc: {} };   // periods: {id, name, fname, date, sales:[]}
+
+function moSave() {
+  lsSave(LS.PERIODS, { periods: MO.periods, date: new Date().toLocaleDateString('ru-RU') });
+}
+function moLoad() {
+  const d = lsLoad(LS.PERIODS);
+  if (d && Array.isArray(d.periods)) MO.periods = d.periods;
+}
+function moEsc(s) {
+  return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+/* Название месяца из имени файла: «Продажи июнь 2026.xlsx» → «Июнь 2026» */
+function moGuessName(fname) {
+  const raw = String(fname || '').replace(/\.(xlsx|xls|csv)$/i, '');
+  const low = raw.toLowerCase().replace(/ё/g, 'е');
+  const year = (low.match(/(20\d{2})/) || [])[1] || '';
+  for (let i = 0; i < 12; i++) {
+    if (new RegExp('(^|[^а-я])' + MO_STEMS[i]).test(low)) return MO_MONTHS[i] + (year ? ' ' + year : '');
+  }
+  let m = low.match(/(20\d{2})[-_.\s]?(0[1-9]|1[0-2])(?!\d)/);
+  if (m) return MO_MONTHS[+m[2] - 1] + ' ' + m[1];
+  m = low.match(/(?:^|[^\d])(0?[1-9]|1[0-2])[-_.](20\d{2})/);
+  if (m) return MO_MONTHS[+m[1] - 1] + ' ' + m[2];
+  return raw.slice(0, 40) || 'Без названия';
+}
+
+/* Значение ячейки «Период / Месяц / Дата» → «Июнь 2026» */
+function moPeriodLabel(v) {
+  if (v == null || v === '') return '';
+  if (typeof v === 'number' && v > 20000 && v < 80000) {          // серийная дата Excel
+    const d = new Date(Date.UTC(1899, 11, 30) + Math.floor(v) * 86400000);
+    return MO_MONTHS[d.getUTCMonth()] + ' ' + d.getUTCFullYear();
+  }
+  const s = String(v).trim();
+  let m = s.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})/);              // 15.06.2026
+  if (m) return MO_MONTHS[+m[2] - 1] + ' ' + m[3];
+  m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);                    // 2026-06-15
+  if (m) return MO_MONTHS[+m[2] - 1] + ' ' + m[1];
+  const g = moGuessName(s);
+  return g === s.slice(0, 40) ? s.slice(0, 40) : g;
+}
+
+/* Ключ сортировки: год*100 + номер месяца; нераспознанное — в конец */
+function moKey(name) {
+  const low = String(name || '').toLowerCase().replace(/ё/g, 'е');
+  const y = +((low.match(/(20\d{2})/) || [])[1] || 0);
+  let mi = 0;
+  for (let i = 0; i < 12; i++) if (new RegExp('(^|[^а-я])' + MO_STEMS[i]).test(low)) { mi = i + 1; break; }
+  if (!y && !mi) return 999999;
+  return (y || 9999) * 100 + (mi || 99);
+}
+function moSorted() {
+  return MO.periods.slice().sort((a, b) => {
+    const d = moKey(a.name) - moKey(b.name);
+    return d !== 0 ? d : String(a.name).localeCompare(String(b.name), 'ru');
+  });
+}
+
+/* ── добавление ──────────────────────────────────────────────────────────── */
+/* Месяц с таким же названием перезаписывается — повторная загрузка файла
+   за тот же месяц не плодит дубли. */
+function moUpsert(name, sales, fname, srcTot) {
+  const nm = String(name || '').trim() || 'Без названия';
+  let p = MO.periods.find(x => x.name.toLowerCase() === nm.toLowerCase());
+  const replaced = !!p;
+  if (!p) { p = { id: 'm' + Date.now() + Math.random().toString(36).slice(2, 6), name: nm }; MO.periods.push(p); }
+  p.sales = sales;
+  p.fname = fname || '';
+  p.date = new Date().toLocaleDateString('ru-RU');
+  p.src = srcTot ? { qty: srcTot.qty, rev: srcTot.rev } : null;   // итог из строки-группировки 1С
+  return replaced;
+}
+
+// Сверка разобранных строк с итогом месяца из самого отчёта 1С: если 1С
+// показывает по месяцу одну сумму, а строк набралось на другую — значит в
+// выгрузке есть промежуточные итоги или часть строк не разобралась.
+function moCheckNote(name, sales, srcTot) {
+  if (!srcTot) return '';
+  const rev = sales.reduce((s, x) => s + (x.rev || 0), 0);
+  const d = rev - srcTot.rev;
+  if (Math.abs(d) < 1) return ', сверка с 1С сходится';
+  return ', ⚠ расхождение с итогом 1С ' + fmt(d) + ' ₽';
+}
+
+function moAddFiles(inp) {
+  const files = Array.from(inp.files || []);
+  if (!files.length) return;
+  const st = document.getElementById('mo-status');
+  const done = [], bad = [];
+  let left = files.length;
+  const finish = () => {
+    moSave(); moRenderList(); moBadge();
+    if (S.ready.specs && S.ready.prices) { moRecalc(); try { renderMonths(); } catch (e) {} }
+    if (st) {
+      const okHtml = done.length ? '<span style="color:var(--green)">✓ ' + moEsc(done.join(' · ')) + '</span>' : '';
+      const badHtml = bad.length ? '<span style="color:var(--amber)">⚠ ' + moEsc(bad.join(' · ')) + '</span>' : '';
+      st.innerHTML = (!done.length && !bad.length)
+        ? '<span style="color:var(--red)">не удалось разобрать ни одного файла</span>'
+        : okHtml + (okHtml && badHtml ? '<br>' : '') + badHtml;
+    }
+    inp.value = '';
+  };
+  files.forEach(f => {
+    readXlsx(f, rows => {
+      try {
+        const parsed = parseSalesFile(rows);
+        if (parsed.collapsed) {
+          bad.push(f.name + ' — в файле только итоги по месяцам, разверните группировку до номенклатуры («Разворачивать до») и выгрузите заново');
+          return;
+        }
+        if (!parsed.sales.length) { bad.push(f.name + ' — строк не найдено'); return; }
+        // Внутри файла есть месяцы (колонкой или строками-группировками) — режем сами
+        const labels = parsed.hasPeriod ? [...new Set(parsed.sales.map(s => s.per).filter(Boolean))] : [];
+        if (labels.length > 1) {
+          labels.forEach(lb => {
+            const part = parsed.sales.filter(s => s.per === lb);
+            moUpsert(lb, part, f.name, parsed.groupTotals[lb]);
+            done.push(lb + ' (' + part.length + moCheckNote(lb, part, parsed.groupTotals[lb]) + ')');
+          });
+        } else {
+          const nm = labels.length === 1 ? labels[0] : moGuessName(f.name);
+          const rep = moUpsert(nm, parsed.sales, f.name, parsed.groupTotals[nm]);
+          done.push(nm + ' (' + parsed.sales.length + (rep ? ', перезаписан' : '') +
+                    moCheckNote(nm, parsed.sales, parsed.groupTotals[nm]) + ')');
+        }
+      } catch (e) {
+        console.warn('moAddFiles:', e);
+        bad.push(f.name + ' — ошибка разбора');
+      } finally {
+        if (--left === 0) finish();
+      }
+    }, msg => { bad.push(f.name + ' — ' + msg); if (--left === 0) finish(); });
+  });
+}
+
+function moAddCurrent() {
+  if (!S.sales.length) { alert('Сначала загрузите файл продаж'); return; }
+  const inputEl = document.getElementById('sales-month');
+  const def = (inputEl && inputEl.value || '').trim() || 'Месяц ' + new Date().toLocaleDateString('ru-RU');
+  const nm = prompt('Под каким названием добавить текущие продажи?', def);
+  if (!nm || !nm.trim()) return;
+  const rep = moUpsert(nm.trim(), JSON.parse(JSON.stringify(S.sales)), 'текущие продажи');
+  moSave(); moRenderList(); moBadge();
+  if (S.ready.specs && S.ready.prices) { moRecalc(); try { renderMonths(); } catch (e) {} }
+  const st = document.getElementById('mo-status');
+  if (st) st.innerHTML = '<span style="color:var(--green)">✓ ' + moEsc(nm.trim()) + (rep ? ' (перезаписан)' : '') + '</span>';
+}
+
+function moSetName(id, val) {
+  const p = MO.periods.find(x => x.id === id);
+  if (!p) return;
+  p.name = String(val || '').trim() || p.name;
+  moSave(); moRenderList();
+  try { renderMonths(); } catch (e) {}
+}
+function moDel(id) {
+  const p = MO.periods.find(x => x.id === id);
+  if (!p) return;
+  if (!confirm('Удалить месяц «' + p.name + '»?')) return;
+  MO.periods = MO.periods.filter(x => x.id !== id);
+  delete MO.calc[id];
+  moSave(); moRenderList(); moBadge();
+  try { renderMonths(); } catch (e) {}
+}
+function moClearAll() {
+  if (!MO.periods.length) return;
+  if (!confirm('Удалить все месяцы (' + MO.periods.length + ')?\n\nВыгрузки продаж, цены и спецификации это не тронет.')) return;
+  MO.periods = []; MO.calc = {};
+  moSave(); moRenderList(); moBadge();
+  try { renderMonths(); } catch (e) {}
+  const st = document.getElementById('mo-status'); if (st) st.innerHTML = '';
+}
+
+/* Отправить месяц в обычный расчёт — чтобы посмотреть детализацию и дерево */
+function moToCalc(id) {
+  const p = MO.periods.find(x => x.id === id);
+  if (!p) return;
+  if (!S.ready.specs || !S.ready.prices) { alert('Нужны спецификации и цены'); return; }
+  S.sales = JSON.parse(JSON.stringify(p.sales || []));
+  S.ready.sales = true;
+  setUploaded('uz-sales', 'us-sales', p.name, S.sales.length + ' позиций');
+  salesSave(p.name);
+  const inputEl = document.getElementById('sales-month');
+  if (inputEl) { inputEl.value = p.name; lsSave(LS.SALESMONTH, p.name); }
+  runCalc();
+}
+
+/* ── расчёт ──────────────────────────────────────────────────────────────── */
+function moTot(rows) {
+  const t = { pos: rows.length, qty: 0, rev: 0, cost: 0, margin: 0, noSpec: 0, partial: 0 };
+  rows.forEach(r => {
+    t.qty += r.qty || 0; t.rev += r.rev || 0; t.cost += r.totalCost || 0; t.margin += r.margin || 0;
+    if (!r.hasSpec) t.noSpec++; else if (!r.full) t.partial++;
+  });
+  t.mp = t.rev > 0 ? t.margin / t.rev * 100 : 0;
+  return t;
+}
+function moRecalc() {
+  MO.calc = {};
+  if (!S.ready.specs || !S.ready.prices) return false;
+  MO.periods.forEach(p => {
+    const rows = calcRowsForSales(p.sales || [], true);
+    MO.calc[p.id] = { rows, tot: moTot(rows) };
+  });
+  return true;
+}
+function moRefresh() {
+  if (!MO.periods.length) { alert('Сначала добавьте файлы продаж за месяцы на вкладке «Загрузка»'); return; }
+  if (!S.ready.specs || !S.ready.prices) { alert('Нужны спецификации и цены закупок'); return; }
+  moRecalc(); renderMonths();
+}
+function moBadge() {
+  const b = document.getElementById('badge-months');
+  if (b) { b.textContent = MO.periods.length; b.style.display = MO.periods.length ? 'inline' : 'none'; }
+}
+
+/* ── список месяцев на вкладке «Загрузка» ────────────────────────────────── */
+function moRenderList() {
+  const el = document.getElementById('mo-list');
+  if (!el) return;
+  if (!MO.periods.length) {
+    el.innerHTML = '<div style="font-size:12px;color:var(--text3);padding:.4rem 0">Месяцев пока нет.</div>';
+    return;
+  }
+  const rows = moSorted().map(p => {
+    const n = (p.sales || []).length;
+    const rev = (p.sales || []).reduce((s, x) => s + (x.rev || 0), 0);
+    return `<tr>
+      <td><input class="inp" style="width:100%;font-size:12px;padding:.3rem .45rem" value="${moEsc(p.name)}"
+                 onchange="moSetName('${p.id}', this.value)"></td>
+      <td style="font-size:11px;color:var(--text3)">${moEsc(p.fname || '')}${p.date ? ' · ' + moEsc(p.date) : ''}</td>
+      <td class="r">${n}</td>
+      <td class="r">${fmt(rev)}</td>
+      <td class="r" style="font-size:11px;white-space:nowrap">${
+        !p.src ? '<span style="color:var(--text3)">—</span>'
+        : (Math.abs(rev - p.src.rev) < 1
+            ? '<span style="color:var(--green)">✓ сходится</span>'
+            : '<span style="color:var(--amber)">Δ ' + fmt(rev - p.src.rev) + '</span>')}</td>
+      <td class="r" style="white-space:nowrap">
+        <button class="btn btn-sm btn-ghost" style="font-size:11px" onclick="moToCalc('${p.id}')" title="Загрузить этот месяц в обычный расчёт">↗ в расчёт</button>
+        <button class="btn btn-sm btn-ghost" style="font-size:11px;color:var(--red)" onclick="moDel('${p.id}')">✕</button>
+      </td></tr>`;
+  }).join('');
+  el.innerHTML = `<div class="table-wrap" style="max-height:none">
+    <table><thead><tr>
+      <th style="width:200px">Месяц</th><th>Файл</th><th class="r">Позиций</th><th class="r">Выручка, ₽</th><th class="r">Сверка с 1С</th><th class="r"></th>
+    </tr></thead><tbody>${rows}</tbody></table></div>`;
+}
+
+/* ── вкладка «По месяцам» ────────────────────────────────────────────────── */
+function renderMonths() {
+  const empty = document.getElementById('mo-empty'), content = document.getElementById('mo-content');
+  if (!empty || !content) return;
+  if (!MO.periods.length) { empty.style.display = ''; content.style.display = 'none'; moBadge(); return; }
+  empty.style.display = 'none'; content.style.display = '';
+
+  const note = document.getElementById('mo-note');
+  if (!S.ready.specs || !S.ready.prices) {
+    if (note) note.innerHTML = '<span style="color:var(--amber)">нет спецификаций или цен — считать нечем</span>';
+    document.getElementById('mo-tbody').innerHTML = '';
+    document.getElementById('mo-metrics').innerHTML = '';
+    return;
+  }
+  if (!Object.keys(MO.calc).length) moRecalc();
+  if (note) note.textContent = 'себестоимость всех месяцев — по текущим ценам и спецификациям';
+
+  const list = moSorted();
+  let prev = null;
+  const trs = list.map(p => {
+    const c = MO.calc[p.id];
+    if (!c) return '';
+    const t = c.tot;
+    const dRev = prev && prev.rev > 0 ? (t.rev - prev.rev) / prev.rev * 100 : null;
+    const dMp = prev ? t.mp - prev.mp : null;
+    prev = t;
+    const q = t.noSpec || t.partial
+      ? `<span style="color:var(--amber);font-size:11px">${t.noSpec ? 'нет спец.: ' + t.noSpec : ''}${t.noSpec && t.partial ? ' · ' : ''}${t.partial ? 'неполные: ' + t.partial : ''}</span>`
+      : '<span style="color:var(--green);font-size:11px">✓ полный</span>';
+    const arrow = v => v === null ? '<span style="color:var(--text3)">—</span>'
+      : `<span style="color:${v >= 0 ? 'var(--green)' : 'var(--red)'}">${v >= 0 ? '▲' : '▼'} ${Math.abs(v).toFixed(1)}%</span>`;
+    const arrowPp = v => v === null ? '<span style="color:var(--text3)">—</span>'
+      : `<span style="color:${v >= 0 ? 'var(--green)' : 'var(--red)'}">${v >= 0 ? '+' : '−'}${Math.abs(v).toFixed(1)} п.п.</span>`;
+    return `<tr>
+      <td style="white-space:nowrap"><span style="font-weight:500">${moEsc(p.name)}</span>
+          <button class="btn btn-sm btn-ghost" style="font-size:10px;margin-left:.4rem;padding:.1rem .35rem" onclick="moToCalc('${p.id}')" title="Открыть этот месяц в обычном расчёте">↗</button></td>
+      <td class="r">${t.pos}</td>
+      <td class="r">${fmt(t.qty)}</td>
+      <td class="r">${fmt(t.rev)}</td>
+      <td class="r">${fmt(t.cost)}</td>
+      <td class="r" style="color:${t.margin >= 0 ? 'var(--green)' : 'var(--red)'}">${fmt(t.margin)}</td>
+      <td class="r">${t.mp.toFixed(1)}%</td>
+      <td class="r" style="white-space:nowrap">${arrow(dRev)}</td>
+      <td class="r" style="white-space:nowrap">${arrowPp(dMp)}</td>
+      <td>${q}</td></tr>`;
+  }).join('');
+
+  const all = list.map(p => MO.calc[p.id]).filter(Boolean).map(c => c.tot);
+  const sum = all.reduce((a, t) => ({
+    pos: a.pos + t.pos, qty: a.qty + t.qty, rev: a.rev + t.rev, cost: a.cost + t.cost, margin: a.margin + t.margin
+  }), { pos: 0, qty: 0, rev: 0, cost: 0, margin: 0 });
+  const sumMp = sum.rev > 0 ? sum.margin / sum.rev * 100 : 0;
+
+  document.getElementById('mo-tbody').innerHTML = trs + `<tr style="font-weight:600;border-top:2px solid var(--border)">
+      <td style="white-space:nowrap">ИТОГО за ${all.length} мес.</td><td class="r">${sum.pos}</td><td class="r">${fmt(sum.qty)}</td>
+      <td class="r">${fmt(sum.rev)}</td><td class="r">${fmt(sum.cost)}</td>
+      <td class="r" style="color:${sum.margin >= 0 ? 'var(--green)' : 'var(--red)'}">${fmt(sum.margin)}</td>
+      <td class="r">${sumMp.toFixed(1)}%</td><td class="r"></td><td class="r"></td><td></td></tr>`;
+
+  document.getElementById('mo-metrics').innerHTML = `
+    <div class="metric"><div class="metric-label">Месяцев</div><div class="metric-value">${all.length}</div></div>
+    <div class="metric"><div class="metric-label">Выручка всего</div><div class="metric-value">${fmt(sum.rev)} ₽</div></div>
+    <div class="metric"><div class="metric-label">Себестоимость всего</div><div class="metric-value">${fmt(sum.cost)} ₽</div></div>
+    <div class="metric"><div class="metric-label">Маржа всего</div><div class="metric-value ${sum.margin >= 0 ? 'green' : 'red'}">${fmt(sum.margin)} ₽</div></div>
+    <div class="metric"><div class="metric-label">Маржа, %</div><div class="metric-value">${sumMp.toFixed(1)}%</div></div>`;
+  moBadge();
+}
+
+/* ── выгрузка в Excel ────────────────────────────────────────────────────── */
+function exportMonths() {
+  if (!MO.periods.length) { alert('Сначала добавьте месяцы'); return; }
+  if (!Object.keys(MO.calc).length && !moRecalc()) { alert('Нужны спецификации и цены закупок'); return; }
+  const list = moSorted().filter(p => MO.calc[p.id]);
+  if (!list.length) { alert('Расчёт не выполнен'); return; }
+
+  const wb = XLSX.utils.book_new();
+
+  // Лист 1 — сводка по месяцам
+  const head = ['Месяц', 'Позиций', 'Кол-во', 'Выручка, ₽', 'Себестоимость, ₽', 'Маржа, ₽', 'Маржа, %',
+                'Δ выручки к пред., %', 'Δ маржи, п.п.', 'Нет спецификации', 'Неполная себестоимость'];
+  const data = [head];
+  let prev = null;
+  list.forEach(p => {
+    const t = MO.calc[p.id].tot;
+    data.push([
+      p.name, t.pos, +(t.qty || 0).toFixed(2), Math.round(t.rev), Math.round(t.cost), Math.round(t.margin),
+      +t.mp.toFixed(1),
+      prev && prev.rev > 0 ? +(((t.rev - prev.rev) / prev.rev) * 100).toFixed(1) : '',
+      prev ? +(t.mp - prev.mp).toFixed(1) : '',
+      t.noSpec, t.partial
+    ]);
+    prev = t;
+  });
+  const tots = list.map(p => MO.calc[p.id].tot);
+  const sum = tots.reduce((a, t) => ({ pos: a.pos + t.pos, qty: a.qty + t.qty, rev: a.rev + t.rev, cost: a.cost + t.cost, margin: a.margin + t.margin }),
+                          { pos: 0, qty: 0, rev: 0, cost: 0, margin: 0 });
+  data.push(['ИТОГО', sum.pos, +sum.qty.toFixed(2), Math.round(sum.rev), Math.round(sum.cost), Math.round(sum.margin),
+             +(sum.rev > 0 ? sum.margin / sum.rev * 100 : 0).toFixed(1), '', '', '', '']);
+  const ws1 = XLSX.utils.aoa_to_sheet(data);
+  ws1['!cols'] = [{ wch: 20 }, { wch: 9 }, { wch: 10 }, { wch: 14 }, { wch: 17 }, { wch: 14 }, { wch: 10 },
+                  { wch: 18 }, { wch: 14 }, { wch: 17 }, { wch: 22 }];
+  XLSX.utils.book_append_sheet(wb, ws1, 'По месяцам');
+
+  // Лист 2 — расшифровка: все позиции всех месяцев
+  const head2 = ['Месяц', 'Номенклатура', 'Характеристика', 'Кол-во', 'Выручка, ₽', 'Себест/ед, ₽',
+                 'Себест. итого, ₽', 'Маржа, ₽', 'Маржа, %', 'Статус'];
+  const data2 = [head2];
+  list.forEach(p => {
+    MO.calc[p.id].rows.slice().sort((a, b) => (b.totalCost || 0) - (a.totalCost || 0)).forEach(r => {
+      data2.push([p.name, r.nom, r.char || '', r.qty, Math.round(r.rev), +(r.cost || 0).toFixed(2),
+                  +(r.totalCost || 0).toFixed(2), Math.round(r.margin), +(r.mp || 0).toFixed(1),
+                  !r.hasSpec ? 'нет спецификации' : (r.full ? 'полный' : 'неполный')]);
+    });
+  });
+  const ws2 = XLSX.utils.aoa_to_sheet(data2);
+  ws2['!cols'] = [{ wch: 16 }, { wch: 45 }, { wch: 26 }, { wch: 9 }, { wch: 14 }, { wch: 13 }, { wch: 16 }, { wch: 14 }, { wch: 10 }, { wch: 18 }];
+  XLSX.utils.book_append_sheet(wb, ws2, 'Расшифровка');
+
+  XLSX.writeFile(wb, 'sebestoimost_po_mesyacam_' + new Date().toISOString().slice(0, 10) + '.xlsx');
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   СРАВНЕНИЕ ДВУХ МЕСЯЦЕВ ПО НОМЕНКЛАТУРЕ
+   Структура продаж → себестоимость, средний чек, рентабельность, прибыль.
+   Факторный разбор: сколько прибыли дал объём, сколько — сдвиг ассортимента,
+   сколько — цена и себестоимость. Раскладка сходится с Δ прибыли до копейки.
+   ═══════════════════════════════════════════════════════════════════════════ */
+const CMP = { a: '', b: '', mode: 'nom', sort: 'profit', q: '' };
+
+function cmpNum(n, d) {
+  const v = +n || 0;
+  return v.toLocaleString('ru-RU', { minimumFractionDigits: d, maximumFractionDigits: d });
+}
+/* цена и себестоимость за единицу: копейки нужны только на мелких суммах */
+function cmpPrice(n) { return Math.abs(+n || 0) >= 1000 ? fmt(n) : cmpNum(n, 2); }
+function cmpSign(v, d, suf) {
+  const s = (v >= 0 ? '+' : '−') + cmpNum(Math.abs(v), d === undefined ? 0 : d) + (suf || '');
+  return `<span style="color:${v > 0 ? 'var(--green)' : (v < 0 ? 'var(--red)' : 'var(--text3)')}">${v === 0 ? '—' : s}</span>`;
+}
+function cmpPct(v0, v1) {
+  if (!v0) return v1 ? '<span style="color:var(--green)">новое</span>' : '<span style="color:var(--text3)">—</span>';
+  return cmpSign((v1 - v0) / v0 * 100, 1, '%');
+}
+
+/* ── агрегация строк расчёта в позиции сравнения ─────────────────────────── */
+function cmpCatLabel(nom) {
+  const c = catClassify(nom);
+  return c === 'tables' ? 'Столы' : c === 'chairs' ? 'Стулья' : c === 'shelving' ? 'Стеллажи' : 'Прочее';
+}
+function cmpAgg(rows, mode) {
+  const map = new Map();
+  (rows || []).forEach(r => {
+    let key, label;
+    if (mode === 'cat') { label = cmpCatLabel(r.nom); key = label; }
+    else if (mode === 'nomchar') { label = r.nom + (r.char ? ' · ' + r.char : ''); key = norm(r.nom) + '|' + norm(r.char); }
+    else { label = r.nom; key = norm(r.nom); }
+    let x = map.get(key);
+    if (!x) { x = { key, label, qty: 0, rev: 0, cost: 0, margin: 0, noSpec: 0 }; map.set(key, x); }
+    x.qty += r.qty || 0; x.rev += r.rev || 0; x.cost += r.totalCost || 0; x.margin += r.margin || 0;
+    if (!r.hasSpec) x.noSpec++;
+  });
+  return map;
+}
+
+/* ── сборка сравнения ────────────────────────────────────────────────────── */
+function cmpBuild() {
+  const pa = MO.periods.find(p => p.id === CMP.a), pb = MO.periods.find(p => p.id === CMP.b);
+  if (!pa || !pb || !MO.calc[pa.id] || !MO.calc[pb.id]) return null;
+  const A = cmpAgg(MO.calc[pa.id].rows, CMP.mode), B = cmpAgg(MO.calc[pb.id].rows, CMP.mode);
+  const tA = MO.calc[pa.id].tot, tB = MO.calc[pb.id].tot;
+
+  const items = [];
+  const keys = new Set([...A.keys(), ...B.keys()]);
+  keys.forEach(k => {
+    const a = A.get(k) || { label: (B.get(k) || {}).label, qty: 0, rev: 0, cost: 0, margin: 0 };
+    const b = B.get(k) || { label: (A.get(k) || {}).label, qty: 0, rev: 0, cost: 0, margin: 0 };
+    const it = {
+      key: k, label: b.label || a.label,
+      qa: a.qty, qb: b.qty, ra: a.rev, rb: b.rev, ca: a.cost, cb: b.cost, ma: a.margin, mb: b.margin,
+      pa: a.qty ? a.rev / a.qty : 0, pb: b.qty ? b.rev / b.qty : 0,        // средний чек за единицу
+      ua: a.qty ? a.cost / a.qty : 0, ub: b.qty ? b.cost / b.qty : 0,      // себестоимость за единицу
+      mpa: a.rev ? a.margin / a.rev * 100 : 0, mpb: b.rev ? b.margin / b.rev * 100 : 0,
+      sa: tA.rev ? a.rev / tA.rev * 100 : 0, sb: tB.rev ? b.rev / tB.rev * 100 : 0,
+      isNew: !a.qty && !!b.qty, isGone: !!a.qty && !b.qty
+    };
+    it.dShare = it.sb - it.sa;
+    it.dProfit = it.mb - it.ma;
+    it.dRev = it.rb - it.ra;
+    items.push(it);
+  });
+
+  /* ── факторный разбор ──
+     Общие позиции: объём (при неизменной структуре) + структура (сдвиг
+     ассортимента) + цена + себестоимость. Новинки и ушедшие позиции считаем
+     отдельно: у них нет базы, приписывать их к «цене» было бы неправдой. */
+  const both = items.filter(i => i.qa > 0 && i.qb > 0);
+  const Q0 = both.reduce((s, i) => s + i.qa, 0), Q1 = both.reduce((s, i) => s + i.qb, 0);
+  const k = Q0 ? Q1 / Q0 : 0;
+  const M0 = both.reduce((s, i) => s + i.ma, 0), R0 = both.reduce((s, i) => s + i.ra, 0);
+
+  const F = {
+    revVol:  R0 * (k - 1),
+    revMix:  both.reduce((s, i) => s + (i.qb - k * i.qa) * i.pa, 0),
+    revPrice: both.reduce((s, i) => s + i.qb * (i.pb - i.pa), 0),
+    revNew:  items.filter(i => i.isNew).reduce((s, i) => s + i.rb, 0),
+    revGone: -items.filter(i => i.isGone).reduce((s, i) => s + i.ra, 0),
+    proVol:  M0 * (k - 1),
+    proMix:  both.reduce((s, i) => s + (i.qb - k * i.qa) * (i.pa - i.ua), 0),
+    proPrice: both.reduce((s, i) => s + i.qb * (i.pb - i.pa), 0),
+    proCost: both.reduce((s, i) => s + i.qb * (i.ua - i.ub), 0),
+    proNew:  items.filter(i => i.isNew).reduce((s, i) => s + i.mb, 0),
+    proGone: -items.filter(i => i.isGone).reduce((s, i) => s + i.ma, 0)
+  };
+  F.revTotal = tB.rev - tA.rev;
+  F.proTotal = tB.margin - tA.margin;
+  F.revCheck = F.revVol + F.revMix + F.revPrice + F.revNew + F.revGone - F.revTotal;
+  F.proCheck = F.proVol + F.proMix + F.proPrice + F.proCost + F.proNew + F.proGone - F.proTotal;
+
+  return { pa, pb, tA, tB, items, F, both: both.length, newN: items.filter(i => i.isNew).length,
+           goneN: items.filter(i => i.isGone).length };
+}
+
+/* ── вкладка ─────────────────────────────────────────────────────────────── */
+function cmpRefreshSelects() {
+  const list = moSorted();
+  const sa = document.getElementById('cmp-a'), sb = document.getElementById('cmp-b');
+  if (!sa || !sb) return;
+  if (!list.find(p => p.id === CMP.a)) CMP.a = (list[list.length - 2] || list[0] || {}).id || '';
+  if (!list.find(p => p.id === CMP.b) || CMP.b === CMP.a) {
+    const alt = list.slice().reverse().find(p => p.id !== CMP.a);
+    CMP.b = alt ? alt.id : CMP.a;
+  }
+  const opts = list.map(p => `<option value="${p.id}">${moEsc(p.name)}</option>`).join('');
+  sa.innerHTML = opts; sb.innerHTML = opts;
+  sa.value = CMP.a; sb.value = CMP.b;
+  const m = document.getElementById('cmp-mode'); if (m) m.value = CMP.mode;
+  const s = document.getElementById('cmp-sort'); if (s) s.value = CMP.sort;
+}
+/* Выбрали в одном списке тот месяц, что стоит в другом, — меняем их местами,
+   иначе сравнение схлопнется в нули. */
+function cmpSet(field, val) {
+  if (field === 'a' && val === CMP.b) CMP.b = CMP.a;
+  else if (field === 'b' && val === CMP.a) CMP.a = CMP.b;
+  CMP[field] = val;
+  renderCompare();
+}
+function cmpSwap() { const t = CMP.a; CMP.a = CMP.b; CMP.b = t; renderCompare(); }
+
+function renderCompare() {
+  const empty = document.getElementById('cmp-empty'), content = document.getElementById('cmp-content');
+  if (!empty || !content) return;
+  if (MO.periods.length < 2) {
+    empty.style.display = ''; content.style.display = 'none';
+    empty.innerHTML = '<span class="empty-icon">⇄</span>Нужно минимум два месяца — добавьте их на вкладке «Загрузка»';
+    return;
+  }
+  if (!S.ready.specs || !S.ready.prices) {
+    empty.style.display = ''; content.style.display = 'none';
+    empty.innerHTML = '<span class="empty-icon">⇄</span>Нужны спецификации и цены закупок';
+    return;
+  }
+  if (!Object.keys(MO.calc).length) moRecalc();
+  cmpRefreshSelects();
+  const D = cmpBuild();
+  if (!D) { empty.style.display = ''; content.style.display = 'none'; return; }
+  empty.style.display = 'none'; content.style.display = '';
+  const A = D.pa.name, B = D.pb.name, tA = D.tA, tB = D.tB;
+
+  /* шапка: итоги двух месяцев */
+  const chA = tA.qty ? tA.rev / tA.qty : 0, chB = tB.qty ? tB.rev / tB.qty : 0;
+  const uA = tA.qty ? tA.cost / tA.qty : 0, uB = tB.qty ? tB.cost / tB.qty : 0;
+  const met = (label, va, vb, f, d, suf) => `
+    <div class="metric"><div class="metric-label">${label}</div>
+      <div class="metric-value" style="font-size:16px">${f(vb)}${suf || ''}</div>
+      <div style="font-size:11px;color:var(--text3)">${A}: ${f(va)}${suf || ''} · ${d}</div></div>`;
+  document.getElementById('cmp-metrics').innerHTML =
+    met('Выручка', tA.rev, tB.rev, fmt, cmpPct(tA.rev, tB.rev), ' ₽') +
+    met('Себестоимость', tA.cost, tB.cost, fmt, cmpPct(tA.cost, tB.cost), ' ₽') +
+    met('Прибыль (маржа)', tA.margin, tB.margin, fmt, cmpPct(tA.margin, tB.margin), ' ₽') +
+    met('Рентабельность', tA.mp, tB.mp, v => cmpNum(v, 1), cmpSign(tB.mp - tA.mp, 1, ' п.п.'), '%') +
+    met('Средний чек за ед.', chA, chB, cmpPrice, cmpPct(chA, chB), ' ₽') +
+    met('Себест. за ед.', uA, uB, cmpPrice, cmpPct(uA, uB), ' ₽') +
+    met('Количество', tA.qty, tB.qty, fmt, cmpPct(tA.qty, tB.qty), '') +
+    met('Позиций в продаже', tA.pos, tB.pos, v => v, `новых ${D.newN} · ушло ${D.goneN}`, '');
+
+  /* факторный разбор */
+  const F = D.F;
+  const frow = (name, v, note) => `<tr><td>${name}</td><td class="r" style="font-family:var(--mono)">${cmpSign(v, 0, ' ₽')}</td>
+    <td style="font-size:11px;color:var(--text3)">${note || ''}</td></tr>`;
+  document.getElementById('cmp-factors').innerHTML = `
+    <table><thead><tr><th>Фактор</th><th class="r">Влияние</th><th>Что это значит</th></tr></thead><tbody>
+    <tr><td colspan="3" style="font-weight:600;color:var(--accent);padding-top:.5rem">Выручка: ${fmt(tA.rev)} → ${fmt(tB.rev)} ₽</td></tr>
+    ${frow('Объём продаж', F.revVol, 'продали больше/меньше штук при той же структуре')}
+    ${frow('Структура ассортимента', F.revMix, 'сдвиг в сторону более/менее дорогих позиций')}
+    ${frow('Цена реализации', F.revPrice, 'изменился средний чек по тем же позициям')}
+    ${frow('Новые позиции', F.revNew, D.newN + ' поз. продавались только в «' + B + '»')}
+    ${frow('Ушедшие позиции', F.revGone, D.goneN + ' поз. продавались только в «' + A + '»')}
+    <tr style="font-weight:600;border-top:1px solid var(--border)"><td>Итого изменение выручки</td>
+      <td class="r" style="font-family:var(--mono)">${cmpSign(F.revTotal, 0, ' ₽')}</td>
+      <td style="font-size:11px;color:${Math.abs(F.revCheck) < 1 ? 'var(--text3)' : 'var(--red)'}">${Math.abs(F.revCheck) < 1 ? 'раскладка сходится' : 'расхождение ' + fmt(F.revCheck)}</td></tr>
+    <tr><td colspan="3" style="font-weight:600;color:var(--accent);padding-top:.75rem">Прибыль: ${fmt(tA.margin)} → ${fmt(tB.margin)} ₽</td></tr>
+    ${frow('Объём продаж', F.proVol, 'та же структура и та же маржа на единицу')}
+    ${frow('Структура ассортимента', F.proMix, 'сдвиг в сторону более/менее маржинальных позиций')}
+    ${frow('Цена реализации', F.proPrice, 'средний чек по сопоставимым позициям')}
+    ${frow('Себестоимость', F.proCost, 'себестоимость единицы по сопоставимым позициям')}
+    ${frow('Новые позиции', F.proNew, 'прибыль позиций, которых не было в «' + A + '»')}
+    ${frow('Ушедшие позиции', F.proGone, 'потерянная прибыль позиций из «' + A + '»')}
+    <tr style="font-weight:600;border-top:1px solid var(--border)"><td>Итого изменение прибыли</td>
+      <td class="r" style="font-family:var(--mono)">${cmpSign(F.proTotal, 0, ' ₽')}</td>
+      <td style="font-size:11px;color:${Math.abs(F.proCheck) < 1 ? 'var(--text3)' : 'var(--red)'}">${Math.abs(F.proCheck) < 1 ? 'раскладка сходится' : 'расхождение ' + fmt(F.proCheck)}</td></tr>
+    </tbody></table>`;
+
+  /* таблица по позициям */
+  const q = (CMP.q || '').toLowerCase().trim();
+  let items = D.items.filter(i => !q || i.label.toLowerCase().includes(q));
+  const srt = {
+    profit: (x, y) => Math.abs(y.dProfit) - Math.abs(x.dProfit),
+    share:  (x, y) => Math.abs(y.dShare) - Math.abs(x.dShare),
+    revB:   (x, y) => y.rb - x.rb,
+    name:   (x, y) => String(x.label).localeCompare(String(y.label), 'ru')
+  }[CMP.sort] || null;
+  if (srt) items = items.slice().sort(srt);
+
+  const tag = i => i.isNew ? ' <span class="badge badge-blue" style="font-size:9px">новая</span>'
+    : (i.isGone ? ' <span class="badge badge-amber" style="font-size:9px">ушла</span>' : '');
+  document.getElementById('cmp-tbody').innerHTML = items.map(i => `<tr>
+      <td style="max-width:280px">${moEsc(i.label)}${tag(i)}</td>
+      <td class="r">${cmpNum(i.qa, 0)}</td><td class="r">${cmpNum(i.qb, 0)}</td>
+      <td class="r" style="white-space:nowrap">${cmpSign(i.qb - i.qa, 0)}</td>
+      <td class="r">${fmt(i.ra)}</td><td class="r">${fmt(i.rb)}</td>
+      <td class="r" style="white-space:nowrap">${cmpPct(i.ra, i.rb)}</td>
+      <td class="r">${cmpNum(i.sa, 1)}%</td><td class="r">${cmpNum(i.sb, 1)}%</td>
+      <td class="r" style="white-space:nowrap">${cmpSign(i.dShare, 1, ' п.п.')}</td>
+      <td class="r">${cmpPrice(i.pa)}</td><td class="r">${cmpPrice(i.pb)}</td>
+      <td class="r">${cmpPrice(i.ua)}</td><td class="r">${cmpPrice(i.ub)}</td>
+      <td class="r">${cmpNum(i.mpa, 1)}%</td><td class="r">${cmpNum(i.mpb, 1)}%</td>
+      <td class="r" style="white-space:nowrap">${cmpSign(i.mpb - i.mpa, 1, ' п.п.')}</td>
+      <td class="r">${fmt(i.ma)}</td><td class="r">${fmt(i.mb)}</td>
+      <td class="r" style="white-space:nowrap;font-weight:500">${cmpSign(i.dProfit, 0, ' ₽')}</td>
+    </tr>`).join('');
+  document.getElementById('cmp-count').textContent = items.length + ' поз. · сопоставимых ' + D.both +
+    ' · новых ' + D.newN + ' · ушедших ' + D.goneN;
+  document.querySelectorAll('.cmp-th-a').forEach(e => e.textContent = A);
+  document.querySelectorAll('.cmp-th-b').forEach(e => e.textContent = B);
+}
+
+/* ── выгрузка ────────────────────────────────────────────────────────────── */
+function exportCompare() {
+  const D = cmpBuild();
+  if (!D) { alert('Сначала выберите два месяца'); return; }
+  const A = D.pa.name, B = D.pb.name, F = D.F, tA = D.tA, tB = D.tB;
+  const wb = XLSX.utils.book_new();
+
+  const head = ['Позиция', 'Статус',
+    'Кол-во ' + A, 'Кол-во ' + B, 'Δ кол-ва',
+    'Выручка ' + A, 'Выручка ' + B, 'Δ выручки, ₽', 'Δ выручки, %',
+    'Доля в выручке ' + A + ', %', 'Доля в выручке ' + B + ', %', 'Δ доли, п.п.',
+    'Ср. чек ' + A, 'Ср. чек ' + B, 'Δ ср. чека, %',
+    'Себест/ед ' + A, 'Себест/ед ' + B, 'Δ себест/ед, %',
+    'Себест. итого ' + A, 'Себест. итого ' + B,
+    'Рентаб. ' + A + ', %', 'Рентаб. ' + B + ', %', 'Δ рентаб., п.п.',
+    'Прибыль ' + A, 'Прибыль ' + B, 'Δ прибыли, ₽'];
+  const pc = (v0, v1) => v0 ? +(((v1 - v0) / v0) * 100).toFixed(1) : '';
+  const data = [head];
+  D.items.slice().sort((x, y) => Math.abs(y.dProfit) - Math.abs(x.dProfit)).forEach(i => {
+    data.push([i.label, i.isNew ? 'новая' : (i.isGone ? 'ушла' : 'сопоставимая'),
+      +i.qa.toFixed(2), +i.qb.toFixed(2), +(i.qb - i.qa).toFixed(2),
+      Math.round(i.ra), Math.round(i.rb), Math.round(i.rb - i.ra), pc(i.ra, i.rb),
+      +i.sa.toFixed(1), +i.sb.toFixed(1), +i.dShare.toFixed(1),
+      +i.pa.toFixed(2), +i.pb.toFixed(2), pc(i.pa, i.pb),
+      +i.ua.toFixed(2), +i.ub.toFixed(2), pc(i.ua, i.ub),
+      Math.round(i.ca), Math.round(i.cb),
+      +i.mpa.toFixed(1), +i.mpb.toFixed(1), +(i.mpb - i.mpa).toFixed(1),
+      Math.round(i.ma), Math.round(i.mb), Math.round(i.dProfit)]);
+  });
+  data.push(['ИТОГО', '', +tA.qty.toFixed(2), +tB.qty.toFixed(2), +(tB.qty - tA.qty).toFixed(2),
+    Math.round(tA.rev), Math.round(tB.rev), Math.round(tB.rev - tA.rev), pc(tA.rev, tB.rev),
+    100, 100, 0,
+    +(tA.qty ? tA.rev / tA.qty : 0).toFixed(2), +(tB.qty ? tB.rev / tB.qty : 0).toFixed(2), '',
+    +(tA.qty ? tA.cost / tA.qty : 0).toFixed(2), +(tB.qty ? tB.cost / tB.qty : 0).toFixed(2), '',
+    Math.round(tA.cost), Math.round(tB.cost),
+    +tA.mp.toFixed(1), +tB.mp.toFixed(1), +(tB.mp - tA.mp).toFixed(1),
+    Math.round(tA.margin), Math.round(tB.margin), Math.round(tB.margin - tA.margin)]);
+  const ws = XLSX.utils.aoa_to_sheet(data);
+  ws['!cols'] = [{ wch: 45 }, { wch: 14 }].concat(Array(24).fill({ wch: 15 }));
+  XLSX.utils.book_append_sheet(wb, ws, 'Сравнение позиций');
+
+  const f = [
+    ['Факторный анализ', A + ' → ' + B],
+    ['Группировка', CMP.mode === 'cat' ? 'по категориям' : (CMP.mode === 'nomchar' ? 'номенклатура + характеристика' : 'по номенклатуре')],
+    ['Сопоставимых позиций', D.both], ['Новых позиций', D.newN], ['Ушедших позиций', D.goneN],
+    [], ['ВЫРУЧКА', 'Влияние, ₽'],
+    ['Выручка ' + A, Math.round(tA.rev)],
+    ['Объём продаж', Math.round(F.revVol)],
+    ['Структура ассортимента', Math.round(F.revMix)],
+    ['Цена реализации', Math.round(F.revPrice)],
+    ['Новые позиции', Math.round(F.revNew)],
+    ['Ушедшие позиции', Math.round(F.revGone)],
+    ['Выручка ' + B, Math.round(tB.rev)],
+    ['Итого изменение', Math.round(F.revTotal)],
+    [], ['ПРИБЫЛЬ (маржа)', 'Влияние, ₽'],
+    ['Прибыль ' + A, Math.round(tA.margin)],
+    ['Объём продаж', Math.round(F.proVol)],
+    ['Структура ассортимента', Math.round(F.proMix)],
+    ['Цена реализации', Math.round(F.proPrice)],
+    ['Себестоимость', Math.round(F.proCost)],
+    ['Новые позиции', Math.round(F.proNew)],
+    ['Ушедшие позиции', Math.round(F.proGone)],
+    ['Прибыль ' + B, Math.round(tB.margin)],
+    ['Итого изменение', Math.round(F.proTotal)],
+    [], ['ПОКАЗАТЕЛИ', A, B, 'Изменение'],
+    ['Количество', +tA.qty.toFixed(2), +tB.qty.toFixed(2), +(tB.qty - tA.qty).toFixed(2)],
+    ['Средний чек за ед., ₽', +(tA.qty ? tA.rev / tA.qty : 0).toFixed(2), +(tB.qty ? tB.rev / tB.qty : 0).toFixed(2),
+      +((tB.qty ? tB.rev / tB.qty : 0) - (tA.qty ? tA.rev / tA.qty : 0)).toFixed(2)],
+    ['Себестоимость за ед., ₽', +(tA.qty ? tA.cost / tA.qty : 0).toFixed(2), +(tB.qty ? tB.cost / tB.qty : 0).toFixed(2),
+      +((tB.qty ? tB.cost / tB.qty : 0) - (tA.qty ? tA.cost / tA.qty : 0)).toFixed(2)],
+    ['Рентабельность, %', +tA.mp.toFixed(1), +tB.mp.toFixed(1), +(tB.mp - tA.mp).toFixed(1)],
+    [], ['Себестоимость считалась по текущим ценам и спецификациям для обоих месяцев'],
+    ['Средний чек = выручка / количество (в выгрузке продаж нет числа документов)']
+  ];
+  const ws2 = XLSX.utils.aoa_to_sheet(f);
+  ws2['!cols'] = [{ wch: 34 }, { wch: 18 }, { wch: 18 }, { wch: 18 }];
+  XLSX.utils.book_append_sheet(wb, ws2, 'Факторы');
+
+  const safe = s => String(s).replace(/[^\wа-яА-Я0-9-]+/g, '_').slice(0, 20);
+  XLSX.writeFile(wb, 'sravnenie_' + safe(A) + '_vs_' + safe(B) + '.xlsx');
+}
+
+/* старт */
+try { moLoad(); moRenderList(); moBadge(); } catch (e) { console.warn('moLoad error:', e); }
+
+console.log('%c\u2713 IRIX COST v5.9 (compare-2026-08-18b) \u2014 \u0444\u0430\u0439\u043b \u0437\u0430\u0433\u0440\u0443\u0436\u0435\u043d \u043f\u043e\u043b\u043d\u043e\u0441\u0442\u044c\u044e', 'color:#00E38A;font-weight:bold;font-size:14px');
 window.__CALC_OK__ = true;
 </script>
 </body>
