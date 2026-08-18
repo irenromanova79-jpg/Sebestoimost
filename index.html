@@ -6315,7 +6315,7 @@ function exportMonths() {
    Факторный разбор: сколько прибыли дал объём, сколько — сдвиг ассортимента,
    сколько — цена и себестоимость. Раскладка сходится с Δ прибыли до копейки.
    ═══════════════════════════════════════════════════════════════════════════ */
-const CMP = { a: '', b: '', mode: 'nom', sort: 'profit', q: '' };
+const CMP = { a: '', b: '', mode: 'nom', sort: 'profit', q: '', expanded: new Set() };
 
 function cmpNum(n, d) {
   const v = +n || 0;
@@ -6345,11 +6345,29 @@ function cmpAgg(rows, mode) {
     else if (mode === 'nomchar') { label = r.nom + (r.char ? ' · ' + r.char : ''); key = norm(r.nom) + '|' + norm(r.char); }
     else { label = r.nom; key = norm(r.nom); }
     let x = map.get(key);
-    if (!x) { x = { key, label, qty: 0, rev: 0, cost: 0, margin: 0, noSpec: 0 }; map.set(key, x); }
+    if (!x) { x = { key, label, nom: r.nom, qty: 0, rev: 0, cost: 0, margin: 0, noSpec: 0 }; map.set(key, x); }
     x.qty += r.qty || 0; x.rev += r.rev || 0; x.cost += r.totalCost || 0; x.margin += r.margin || 0;
     if (!r.hasSpec) x.noSpec++;
   });
   return map;
+}
+/* строка сравнения (общая форма — используется и для позиций, и для детализации внутри категории) */
+function cmpMakeItem(k, a, b, tA, tB) {
+  a = a || { label: (b || {}).label, qty: 0, rev: 0, cost: 0, margin: 0 };
+  b = b || { label: (a || {}).label, qty: 0, rev: 0, cost: 0, margin: 0 };
+  const it = {
+    key: k, label: b.label || a.label,
+    qa: a.qty, qb: b.qty, ra: a.rev, rb: b.rev, ca: a.cost, cb: b.cost, ma: a.margin, mb: b.margin,
+    pa: a.qty ? a.rev / a.qty : 0, pb: b.qty ? b.rev / b.qty : 0,        // средний чек за единицу
+    ua: a.qty ? a.cost / a.qty : 0, ub: b.qty ? b.cost / b.qty : 0,      // себестоимость за единицу
+    mpa: a.rev ? a.margin / a.rev * 100 : 0, mpb: b.rev ? b.margin / b.rev * 100 : 0,
+    sa: tA.rev ? a.rev / tA.rev * 100 : 0, sb: tB.rev ? b.rev / tB.rev * 100 : 0,
+    isNew: !a.qty && !!b.qty, isGone: !!a.qty && !b.qty
+  };
+  it.dShare = it.sb - it.sa;
+  it.dProfit = it.mb - it.ma;
+  it.dRev = it.rb - it.ra;
+  return it;
 }
 
 /* ── сборка сравнения ────────────────────────────────────────────────────── */
@@ -6361,23 +6379,25 @@ function cmpBuild() {
 
   const items = [];
   const keys = new Set([...A.keys(), ...B.keys()]);
-  keys.forEach(k => {
-    const a = A.get(k) || { label: (B.get(k) || {}).label, qty: 0, rev: 0, cost: 0, margin: 0 };
-    const b = B.get(k) || { label: (A.get(k) || {}).label, qty: 0, rev: 0, cost: 0, margin: 0 };
-    const it = {
-      key: k, label: b.label || a.label,
-      qa: a.qty, qb: b.qty, ra: a.rev, rb: b.rev, ca: a.cost, cb: b.cost, ma: a.margin, mb: b.margin,
-      pa: a.qty ? a.rev / a.qty : 0, pb: b.qty ? b.rev / b.qty : 0,        // средний чек за единицу
-      ua: a.qty ? a.cost / a.qty : 0, ub: b.qty ? b.cost / b.qty : 0,      // себестоимость за единицу
-      mpa: a.rev ? a.margin / a.rev * 100 : 0, mpb: b.rev ? b.margin / b.rev * 100 : 0,
-      sa: tA.rev ? a.rev / tA.rev * 100 : 0, sb: tB.rev ? b.rev / tB.rev * 100 : 0,
-      isNew: !a.qty && !!b.qty, isGone: !!a.qty && !b.qty
-    };
-    it.dShare = it.sb - it.sa;
-    it.dProfit = it.mb - it.ma;
-    it.dRev = it.rb - it.ra;
-    items.push(it);
-  });
+  keys.forEach(k => items.push(cmpMakeItem(k, A.get(k), B.get(k), tA, tB)));
+
+  /* ── детализация по позициям внутри категорий (только режим «по категориям») ──
+     Строим ту же раскладку на уровне «номенклатура + характеристика» и цепляем
+     каждую позицию к своей категории — строки категорий разворачиваются в них. */
+  if (CMP.mode === 'cat') {
+    const Ad = cmpAgg(MO.calc[pa.id].rows, 'nomchar'), Bd = cmpAgg(MO.calc[pb.id].rows, 'nomchar');
+    const dkeys = new Set([...Ad.keys(), ...Bd.keys()]);
+    const byCat = new Map();
+    dkeys.forEach(k => {
+      const a = Ad.get(k), b = Bd.get(k);
+      const nom = (b || a).nom;
+      const catLabel = cmpCatLabel(nom);
+      const di = cmpMakeItem('d|' + k, a, b, tA, tB);
+      if (!byCat.has(catLabel)) byCat.set(catLabel, []);
+      byCat.get(catLabel).push(di);
+    });
+    items.forEach(i => { i.children = byCat.get(i.label) || []; });
+  }
 
   /* ── факторный разбор ──
      Общие позиции: объём (при неизменной структуре) + структура (сдвиг
@@ -6502,19 +6522,45 @@ function renderCompare() {
 
   /* таблица по позициям */
   const q = (CMP.q || '').toLowerCase().trim();
-  let items = D.items.filter(i => !q || i.label.toLowerCase().includes(q));
   const srt = {
     profit: (x, y) => Math.abs(y.dProfit) - Math.abs(x.dProfit),
     share:  (x, y) => Math.abs(y.dShare) - Math.abs(x.dShare),
     revB:   (x, y) => y.rb - x.rb,
     name:   (x, y) => String(x.label).localeCompare(String(y.label), 'ru')
   }[CMP.sort] || null;
-  if (srt) items = items.slice().sort(srt);
+
+  const isCat = CMP.mode === 'cat';
+  let items, childCount = 0;
+  if (isCat) {
+    /* в режиме «по категориям» строку-категорию оставляем, даже если сама она
+       не подошла под поиск, — пока внутри есть хоть одна подходящая позиция */
+    items = D.items.map(i => {
+      const selfMatch = !q || i.label.toLowerCase().includes(q);
+      const kids = (i.children || []).filter(c => !q || c.label.toLowerCase().includes(q));
+      childCount += kids.length;
+      return Object.assign({}, i, { children: srt ? kids.slice().sort(srt) : kids, selfMatch });
+    }).filter(i => i.selfMatch || i.children.length);
+    if (srt) items = items.slice().sort(srt);
+  } else {
+    items = D.items.filter(i => !q || i.label.toLowerCase().includes(q));
+    if (srt) items = items.slice().sort(srt);
+  }
 
   const tag = i => i.isNew ? ' <span class="badge badge-blue" style="font-size:9px">новая</span>'
     : (i.isGone ? ' <span class="badge badge-amber" style="font-size:9px">ушла</span>' : '');
-  document.getElementById('cmp-tbody').innerHTML = items.map(i => `<tr>
-      <td style="max-width:280px">${moEsc(i.label)}${tag(i)}</td>
+  const cmpRow = (i, child) => {
+    const hasKids = !child && i.children && i.children.length;
+    /* при активном поиске раскрываем категории, которые попали в выборку
+       только за счёт вложенных позиций */
+    const open = hasKids && (CMP.expanded.has(i.key) || (q && !i.selfMatch));
+    const arrow = hasKids
+      ? `<span style="display:inline-block;width:14px;color:var(--text3)">${open ? '▾' : '▸'}</span>`
+      : `<span style="display:inline-block;width:14px"></span>`;
+    const nameTd = hasKids
+      ? `<td style="max-width:280px;cursor:pointer" onclick="cmpToggleCat(this)" data-key="${moEsc(i.key)}">${arrow}${moEsc(i.label)}${tag(i)}</td>`
+      : `<td style="max-width:280px;${child ? 'padding-left:2rem;color:var(--text2);font-size:12.5px' : ''}">${arrow}${moEsc(i.label)}${tag(i)}</td>`;
+    return `<tr${child ? ' style="background:rgba(255,255,255,.025)"' : ''}${!child && hasKids ? ' style="font-weight:600"' : ''}>
+      ${nameTd}
       <td class="r">${cmpNum(i.qa, 0)}</td><td class="r">${cmpNum(i.qb, 0)}</td>
       <td class="r" style="white-space:nowrap">${cmpSign(i.qb - i.qa, 0)}</td>
       <td class="r">${fmt(i.ra)}</td><td class="r">${fmt(i.rb)}</td>
@@ -6527,11 +6573,31 @@ function renderCompare() {
       <td class="r" style="white-space:nowrap">${cmpSign(i.mpb - i.mpa, 1, ' п.п.')}</td>
       <td class="r">${fmt(i.ma)}</td><td class="r">${fmt(i.mb)}</td>
       <td class="r" style="white-space:nowrap;font-weight:500">${cmpSign(i.dProfit, 0, ' ₽')}</td>
-    </tr>`).join('');
-  document.getElementById('cmp-count').textContent = items.length + ' поз. · сопоставимых ' + D.both +
-    ' · новых ' + D.newN + ' · ушедших ' + D.goneN;
+    </tr>`;
+  };
+
+  let tbody = '';
+  items.forEach(i => {
+    tbody += cmpRow(i, false);
+    const hasKids = i.children && i.children.length;
+    const open = hasKids && (CMP.expanded.has(i.key) || (q && !i.selfMatch));
+    if (open) i.children.forEach(c => { tbody += cmpRow(c, true); });
+  });
+  document.getElementById('cmp-tbody').innerHTML = tbody;
+  document.getElementById('cmp-count').textContent = isCat
+    ? (items.length + ' категор' + (items.length === 1 ? 'ия' : (items.length < 5 ? 'ии' : 'ий')) +
+       ' · позиций внутри ' + childCount + ' · сопоставимых ' + D.both + ' · новых ' + D.newN + ' · ушедших ' + D.goneN)
+    : (items.length + ' поз. · сопоставимых ' + D.both + ' · новых ' + D.newN + ' · ушедших ' + D.goneN);
   document.querySelectorAll('.cmp-th-a').forEach(e => e.textContent = A);
   document.querySelectorAll('.cmp-th-b').forEach(e => e.textContent = B);
+}
+
+/* разворот/сворот категории в таблице сравнения */
+function cmpToggleCat(el) {
+  const key = el.getAttribute('data-key');
+  if (!key) return;
+  if (CMP.expanded.has(key)) CMP.expanded.delete(key); else CMP.expanded.add(key);
+  renderCompare();
 }
 
 /* ── выгрузка ────────────────────────────────────────────────────────────── */
